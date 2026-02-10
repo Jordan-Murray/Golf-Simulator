@@ -24,13 +24,13 @@ public class DnaAnalysisService
             };
 
             // Populate distances for different lies.
-            if (clubData.Terrain?.Tee?.Distance > 0) profile.DistanceByLie["Tee"] = clubData.Terrain.Tee.Distance;
-            if (clubData.Terrain?.Fairway?.Distance > 0) profile.DistanceByLie["Fairway"] = clubData.Terrain.Fairway.Distance;
-            if (clubData.Terrain?.Rough?.Distance > 0) profile.DistanceByLie["Rough"] = clubData.Terrain.Rough.Distance;
-            if (clubData.Terrain?.Sand?.Distance > 0) profile.DistanceByLie["Sand"] = clubData.Terrain.Sand.Distance;
+            if (clubData.Terrain?.Tee?.Distance > 0) profile.DistanceByLie[LieType.Tee] = clubData.Terrain.Tee.Distance;
+            if (clubData.Terrain?.Fairway?.Distance > 0) profile.DistanceByLie[LieType.Fairway] = clubData.Terrain.Fairway.Distance;
+            if (clubData.Terrain?.Rough?.Distance > 0) profile.DistanceByLie[LieType.Rough] = clubData.Terrain.Rough.Distance;
+            if (clubData.Terrain?.Sand?.Distance > 0) profile.DistanceByLie[LieType.Sand] = clubData.Terrain.Sand.Distance;
 
             // Add a fallback default distance.
-            if (clubData.SmartDistance != null) profile.DistanceByLie["Default"] = clubData.SmartDistance.Distance;
+            if (clubData.SmartDistance != null) profile.DistanceByLie[LieType.Default] = clubData.SmartDistance.Distance;
 
             dna.ClubProfiles[clubData.ClubId] = profile;
         }

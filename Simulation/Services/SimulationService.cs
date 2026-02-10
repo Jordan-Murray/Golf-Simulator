@@ -9,6 +9,7 @@ public class SimulationService
     private readonly ILieManager _lies;
     private readonly IPuttingModel _putts;
     private readonly IPenaltyManager _pen;
+    private readonly SimulationSettings _settings;
 
     private readonly Random _rand = new();
     private bool _verbose;
@@ -18,13 +19,15 @@ public class SimulationService
         IClubSelector clubs,
         ILieManager lies,
         IPuttingModel putts,
-        IPenaltyManager pen)
+        IPenaltyManager pen,
+        SimulationSettings settings)
     {
         _dna = dna;
         _clubs = clubs;
         _lies = lies;
         _putts = putts;
         _pen = pen;
+        _settings = settings;
     }
 
     // ---------------------------------------------------------------------
@@ -57,13 +60,13 @@ public class SimulationService
 
         var sh = new SimulatedHole { HoleNumber = layout.HoleNumber, Par = layout.Par };
         var dist = layout.LengthYards;
-        var lie = "Tee";
+        var lie = LieType.Tee;
         var shotN = 0;
 
         while (dist > 0.1)
         {
             // ---------------- penalties -----------------
-            if (_pen.IsPenalty())
+            if (_pen.IsPenalty(lie))
             {
                 shotN++;
                 Log("PENALTY STROKE! A costly mistake.");
@@ -80,7 +83,7 @@ public class SimulationService
             }
 
             // ---------------- putting -------------------
-            if (lie == "Green")
+            if (lie == LieType.Green)
             {
                 shotN++;
                 var startFt = dist.ToFeet();
@@ -119,9 +122,9 @@ public class SimulationService
                         ShotNumber = shotN,
                         ClubName = "Putter",
                         ClubUsed = GolferDna.PutterClubId,
-                        DistanceTravelled = remainFt / 3.28,
-                        Lie = "Green",
-                        DistanceToHoleAfterShot = last ? 0 : remainFt / 3.28
+                        DistanceTravelled = remainFt / 3.0,
+                        Lie = LieType.Green,
+                        DistanceToHoleAfterShot = last ? 0 : remainFt / 3.0
                     });
                 }
                 dist = 0;
@@ -134,12 +137,16 @@ public class SimulationService
             var club = _clubs.SelectClub(dist, lie, _dna, teeKey);
             var clubName = ClubNameMapper.GetClubName(club.ClubId);
 
-            var shotDist = (dist <= 60 && lie != "Tee")
+            var shotDist = (dist <= 60 && lie != LieType.Tee)
                 ? dist * (0.9 + 0.2 * _rand.NextDouble())      // pitch/chip
-                : club.GetRandomDistance(lie);
+                : club.GetRandomDistance(lie, _settings.OverallAccuracyMultiplier);
+
+            // Apply driver distance boost from settings
+            if (club.ClubId == 1)
+                shotDist += _settings.DriverDistanceBoostYards;
 
             var remaining = Math.Abs(dist - shotDist);
-            var newLie = remaining < 30 ? "Green"
+            var newLie = remaining < 30 ? LieType.Green
                                            : _lies.GetNextLie(lie, remaining, _dna);
 
             Log($"Shot {shotN}: Hit {clubName} {shotDist:F0} yards. Lie: {newLie}. {remaining:F0} yards remaining.");

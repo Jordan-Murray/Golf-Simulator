@@ -17,7 +17,8 @@ public class SimulatedShot
     public double DistanceTravelled { get; set; }
 
     [JsonPropertyName("lie")]
-    public string Lie { get; set; } = "Tee"; // e.g., Tee, Fairway, Rough, Green
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public LieType Lie { get; set; } = LieType.Tee;
 
     [JsonPropertyName("distanceToHoleAfterShot")]
     public double DistanceToHoleAfterShot { get; set; }

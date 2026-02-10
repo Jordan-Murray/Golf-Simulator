@@ -1,18 +1,19 @@
-﻿namespace Simulation.Models
+namespace Simulation.Models;
+
+public class SimulationSettings
 {
-    public class SimulationSettings
-    {
-        // How many penalty strokes do you average per 18 holes?
-        public double AveragePenaltiesPer18Holes { get; set; }
+    /// <summary>How many penalty strokes do you average per 18 holes?</summary>
+    public double AveragePenaltiesPer18Holes { get; set; } = 4.0;
 
-        // What percentage of putts inside 6 feet do you want to make? (Set to 100 for "perfect")
-        public double MakePercentageInside6Feet { get; set; }
+    /// <summary>What percentage of putts inside 6 feet do you make? (Set to 100 for "perfect")</summary>
+    public double MakePercentageInside6Feet { get; set; } = 90.0;
 
-        // How many extra yards do you want to add to your driver? (Can be negative)
-        public double DriverDistanceBoostYards { get; set; }
+    /// <summary>Extra yards to add to your driver distance. Can be negative.</summary>
+    public double DriverDistanceBoostYards { get; set; }
 
-        // A multiplier for accuracy. 1.0 is your normal dispersion.
-        // 0.8 would be 20% more accurate. 1.2 would be 20% less accurate.
-        public double OverallAccuracyMultiplier { get; set; }
-    }
+    /// <summary>
+    /// Multiplier for shot dispersion. 1.0 = your normal spread.
+    /// 0.8 = 20% more accurate. 1.2 = 20% less accurate.
+    /// </summary>
+    public double OverallAccuracyMultiplier { get; set; } = 1.0;
 }

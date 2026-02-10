@@ -5,15 +5,15 @@ namespace Simulation.Services;
 public static class ClubPerformanceProfileExtensions
 {
     private static readonly Random _rand = new();
-    public static double GetRandomDistance(this ClubPerformanceProfile profile, string lie)
+    public static double GetRandomDistance(this ClubPerformanceProfile profile, LieType lie, double accuracyMultiplier = 1.0)
     {
         if (profile == null) throw new ArgumentNullException(nameof(profile));
 
         var mean = profile.DistanceByLie.TryGetValue(lie, out var distance)
                     ? distance
-                    : profile.DistanceByLie.GetValueOrDefault("Default", 0);
+                    : profile.DistanceByLie.GetValueOrDefault(LieType.Default, 0);
 
-        var stdDev = profile.StandardDeviation;
+        var stdDev = profile.StandardDeviation * accuracyMultiplier;
 
         // Box–Muller transform for Gaussian randomness
         var u1 = 1.0 - _rand.NextDouble();
@@ -25,5 +25,7 @@ public static class ClubPerformanceProfileExtensions
         return Math.Max(1, result); // never negative or zero
     }
 
-    public static double ToFeet(this double yards) => yards * 3.28;
+    private const double FeetPerYard = 3.0;
+
+    public static double ToFeet(this double yards) => yards * FeetPerYard;
 }

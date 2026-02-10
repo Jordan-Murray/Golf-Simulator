@@ -4,5 +4,5 @@ namespace Simulation.Services;
 
 public interface ILieManager
 {
-    string GetNextLie(string previousLie, double distanceToHole, GolferDna dna);
+    LieType GetNextLie(LieType previousLie, double distanceToHole, GolferDna dna);
 }
