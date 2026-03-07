@@ -1,0 +1,139 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #1a1a2e;
+    color: #fff;
+}
+
+#canvas { display: block; }
+
+/* Loading overlay */
+#loading {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #1a1a2e;
+    font-size: 1.2rem; color: #aaa;
+    z-index: 100;
+}
+
+/* ---- Top Bar ---- */
+#top-bar {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 20px;
+    padding: 12px 20px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+    z-index: 10;
+    pointer-events: none;
+}
+#top-bar > * { pointer-events: auto; }
+#course-name { font-size: 1.3rem; font-weight: 600; }
+#round-info { font-size: 0.85rem; color: #ccc; }
+#round-select {
+    margin-left: auto;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px;
+    color: #fff; font-size: 0.85rem;
+    cursor: pointer;
+}
+#round-select option { background: #1a1a2e; }
+
+/* ---- Hole Info (left panel) ---- */
+#hole-panel {
+    position: fixed; left: 16px; top: 70px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 16px 20px;
+    min-width: 160px;
+    z-index: 10;
+}
+#hole-title { font-size: 1.5rem; font-weight: 700; }
+#hole-par { font-size: 0.9rem; color: #aaa; margin-bottom: 6px; }
+#hole-score { font-size: 1.1rem; font-weight: 600; }
+
+/* ---- Shot Info (right panel) ---- */
+#shot-panel {
+    position: fixed; right: 16px; top: 70px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 16px 20px;
+    min-width: 160px;
+    text-align: right;
+    z-index: 10;
+}
+#shot-num { font-size: 0.85rem; color: #aaa; }
+#shot-club { font-size: 1.3rem; font-weight: 600; margin: 4px 0; }
+#shot-dist { font-size: 1rem; color: #ccc; }
+
+/* ---- Controls (bottom center) ---- */
+#controls {
+    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 30px;
+    padding: 8px 16px;
+    z-index: 10;
+}
+.ctrl-btn {
+    width: 40px; height: 40px;
+    border: none; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    color: #fff; font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center;
+}
+.ctrl-btn:hover { background: rgba(255,255,255,0.3); }
+.ctrl-btn.play {
+    width: 48px; height: 48px;
+    background: #4caf50;
+    font-size: 1.3rem;
+}
+.ctrl-btn.play:hover { background: #66bb6a; }
+.ctrl-divider {
+    width: 1px; height: 28px;
+    background: rgba(255,255,255,0.2);
+    margin: 0 4px;
+}
+
+/* ---- Scorecard (bottom bar) ---- */
+#scorecard-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: center;
+    padding: 10px 20px;
+    background: rgba(0,0,0,0.6);
+    z-index: 10;
+}
+#scorecard {
+    display: flex; gap: 4px;
+}
+.sc-hole {
+    width: 32px; height: 44px;
+    border-radius: 6px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s;
+    opacity: 0.8;
+}
+.sc-hole:hover { transform: scale(1.15); opacity: 1; }
+.sc-hole.sc-active {
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 0 2px #fff;
+}
+.sc-num { font-size: 0.6rem; color: rgba(255,255,255,0.7); }
+.sc-score { font-size: 0.9rem; font-weight: 700; }
+
+/* ---- Keyboard hint ---- */
+#kb-hint {
+    position: fixed; bottom: 60px; right: 16px;
+    font-size: 0.7rem; color: rgba(255,255,255,0.3);
+    z-index: 10;
+}

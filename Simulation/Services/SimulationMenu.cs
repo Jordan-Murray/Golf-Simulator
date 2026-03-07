@@ -28,8 +28,15 @@ public class SimulationMenu
             {
                 "9" => _course.Holes.Take(9).ToList(),
                 "18" => _course.Holes.Take(18).ToList(),
-                _ => throw new ArgumentException("Invalid input. Please enter 9 or 18.")
+                _ => null
             };
+
+            if (selectedHoles == null)
+            {
+                Console.WriteLine("Invalid input. Please enter 9 or 18.");
+                continue;
+            }
+
             var courseToPlay = new CourseLayout
             {
                 CourseName = _course.CourseName,
@@ -105,7 +112,14 @@ public class SimulationMenu
             Console.WriteLine($"\n--- Hole {hole.HoleNumber} (Par {hole.Par}) ---");
             foreach (var shot in hole.Shots)
             {
-                Console.WriteLine($"  Shot {shot.ShotNumber}: {shot.ClubName} — {shot.DistanceTravelled:F0} yds, Lie: {shot.Lie}, {shot.DistanceToHoleAfterShot:F0} yds remaining");
+                if (shot.ClubUsed == GolferDna.PutterClubId)
+                {
+                    Console.WriteLine($"  Shot {shot.ShotNumber}: {shot.ClubName} — {(shot.DistanceTravelled * 3.0):F1} ft, Lie: {shot.Lie}, {(shot.DistanceToHoleAfterShot * 3.0):F1} ft remaining");
+                }
+                else
+                {
+                    Console.WriteLine($"  Shot {shot.ShotNumber}: {shot.ClubName} — {shot.DistanceTravelled:F0} yds, Lie: {shot.Lie}, {shot.DistanceToHoleAfterShot:F0} yds remaining");
+                }
             }
             Console.WriteLine($"  Score: {hole.Score}");
         }

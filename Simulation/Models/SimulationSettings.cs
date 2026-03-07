@@ -16,4 +16,16 @@ public class SimulationSettings
     /// 0.8 = 20% more accurate. 1.2 = 20% less accurate.
     /// </summary>
     public double OverallAccuracyMultiplier { get; set; } = 1.0;
+
+    /// <summary>Automatically tune key simulation inputs from historical shots at startup.</summary>
+    public bool AutoCalibrateFromHistoricalData { get; set; } = true;
+
+    /// <summary>How strongly auto calibration should override configured settings (0-1).</summary>
+    public double AutoCalibrationBlend { get; set; } = 0.7;
+
+    /// <summary>
+    /// Additional stochastic strokes per hole used to match real scoring pressure
+    /// (short game errors, recovery shots, decision mistakes not captured elsewhere).
+    /// </summary>
+    public double ExtraStrokesPerHole { get; set; }
 }

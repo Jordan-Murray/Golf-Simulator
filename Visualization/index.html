@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golf 3D — Shot Visualizer</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- Loading -->
+    <div id="loading">Loading visualization data…</div>
+
+    <!-- 3D Canvas -->
+    <canvas id="canvas"></canvas>
+
+    <!-- Top Bar -->
+    <div id="top-bar">
+        <span id="course-name">—</span>
+        <span id="round-info">—</span>
+        <select id="round-select"></select>
+    </div>
+
+    <!-- Hole Info (left) -->
+    <div id="hole-panel">
+        <div id="hole-title">Hole 1</div>
+        <div id="hole-par">Par 4</div>
+        <div id="hole-score">—</div>
+    </div>
+
+    <!-- Shot Info (right) -->
+    <div id="shot-panel">
+        <div id="shot-num">On the tee</div>
+        <div id="shot-club">—</div>
+        <div id="shot-dist">—</div>
+    </div>
+
+    <!-- Playback Controls -->
+    <div id="controls">
+        <button class="ctrl-btn" id="btn-prev-hole" title="Previous Hole">◀◀</button>
+        <button class="ctrl-btn" id="btn-prev-shot" title="Previous Shot">◀</button>
+        <div class="ctrl-divider"></div>
+        <button class="ctrl-btn play" id="btn-play" title="Play / Pause">▶</button>
+        <div class="ctrl-divider"></div>
+        <button class="ctrl-btn" id="btn-next-shot" title="Next Shot">▶</button>
+        <button class="ctrl-btn" id="btn-next-hole" title="Next Hole">▶▶</button>
+    </div>
+
+    <!-- Scorecard -->
+    <div id="scorecard-bar">
+        <div id="scorecard"></div>
+    </div>
+
+    <!-- Keyboard hint -->
+    <div id="kb-hint">← → shots &nbsp; ↑ ↓ holes &nbsp; Space play</div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

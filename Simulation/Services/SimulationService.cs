@@ -62,9 +62,55 @@ public class SimulationService
         var dist = layout.LengthYards;
         var lie = LieType.Tee;
         var shotN = 0;
+        var extraTotal = SampleExtraStrokes(_settings.ExtraStrokesPerHole);
+        var extraPutts = 0;
+        for (int i = 0; i < extraTotal; i++)
+        {
+            if (_rand.NextDouble() < 0.6) extraPutts++;
+        }
+        var extraNonPutt = extraTotal - extraPutts;
 
         while (dist > 0.1)
         {
+            if (lie != LieType.Green && extraNonPutt > 0 && _rand.NextDouble() < 0.35)
+            {
+                var addPenalty = _rand.NextDouble() < 0.45;
+                shotN++;
+
+                if (addPenalty)
+                {
+                    Log("Penalty stroke (calibration): lost ball / hazard.");
+                    sh.Shots.Add(new SimulatedShot
+                    {
+                        ShotNumber = shotN,
+                        ClubName = "Penalty",
+                        ClubUsed = -1,
+                        DistanceTravelled = 0,
+                        Lie = lie,
+                        DistanceToHoleAfterShot = dist
+                    });
+                }
+                else
+                {
+                    var duffTravel = Math.Min(dist, 1 + (_rand.NextDouble() * 9));
+                    dist = Math.Max(0, dist - duffTravel);
+                    Log($"Duffed shot (calibration): advanced only {duffTravel:F0} yards.");
+                    sh.Shots.Add(new SimulatedShot
+                    {
+                        ShotNumber = shotN,
+                        ClubName = "Duff Shot",
+                        ClubUsed = -3,
+                        DistanceTravelled = duffTravel,
+                        Lie = lie,
+                        DistanceToHoleAfterShot = dist
+                    });
+                }
+
+                extraNonPutt--;
+                if (dist <= 0.1) break;
+                continue;
+            }
+
             // ---------------- penalties -----------------
             if (_pen.IsPenalty(lie))
             {
@@ -102,30 +148,64 @@ public class SimulationService
 
                 if (holed)
                 {
+                    if (extraPutts > 0)
+                    {
+                        extraPutts--;
+                        var remainFtForced = _rand.Next(1, 4);
+                        dist = remainFtForced / 3.0;
+                        var forcedTravel = Math.Max(0, startFt / 3.0 - dist);
+                        sh.Shots[^1].DistanceTravelled = forcedTravel;
+                        sh.Shots[^1].DistanceToHoleAfterShot = dist;
+                        Log($"Shot {shotN} (Putt): Burned the edge from {startFt:F1} ft. {remainFtForced:F1} ft remaining.");
+                    }
+                    else
+                    {
                     Log($"Shot {shotN} (Putt): Sunk a {startFt:F1} footer!");
                     break;
+                    }
                 }
 
                 var remainFt = dist.ToFeet();
                 Log($"Shot {shotN} (Putt): Lagged a {startFt:F1} footer close. {remainFt:F1} feet remaining.");
 
                 // tap-ins
-                for (int i = 0; i < taps; i++)
+                var totalTapAttempts = taps + extraPutts;
+                extraPutts = 0;
+                var remainYards = dist;
+                for (int i = 0; i < totalTapAttempts; i++)
                 {
                     shotN++;
-                    bool last = i == taps - 1;
+                    bool last = i == totalTapAttempts - 1;
                     var verb = last ? "Sunk" : "Missed";
-                    Log($"Shot {shotN} (Putt): {verb} a {remainFt:F1} footer!");
+                    var puttStartFt = remainYards.ToFeet();
+                    Log($"Shot {shotN} (Putt): {verb} a {puttStartFt:F1} footer!");
+
+                    double travelYards;
+                    double afterYards;
+                    if (last)
+                    {
+                        travelYards = remainYards;
+                        afterYards = 0;
+                    }
+                    else
+                    {
+                        // Misses from short range usually leave a very short follow-up.
+                        var leaveYards = Math.Min(remainYards, (0.5 + (_rand.NextDouble() * 1.5)) / 3.0);
+                        travelYards = Math.Max(0, remainYards - leaveYards);
+                        afterYards = leaveYards;
+                    }
 
                     sh.Shots.Add(new SimulatedShot
                     {
                         ShotNumber = shotN,
                         ClubName = "Putter",
                         ClubUsed = GolferDna.PutterClubId,
-                        DistanceTravelled = remainFt / 3.0,
+                        DistanceTravelled = travelYards,
                         Lie = LieType.Green,
-                        DistanceToHoleAfterShot = last ? 0 : remainFt / 3.0
+                        DistanceToHoleAfterShot = afterYards
                     });
+
+                    remainYards = afterYards;
                 }
                 dist = 0;
                 break;
@@ -145,9 +225,26 @@ public class SimulationService
             if (club.ClubId == 1)
                 shotDist += _settings.DriverDistanceBoostYards;
 
-            var remaining = Math.Abs(dist - shotDist);
-            var newLie = remaining < 30 ? LieType.Green
-                                           : _lies.GetNextLie(lie, remaining, _dna);
+            var rawRemaining = dist - shotDist;
+            var remaining = Math.Abs(rawRemaining);
+
+            LieType newLie;
+            if (rawRemaining <= 0)
+            {
+                // Overshot the flag: often off green unless the miss is very small.
+                newLie = remaining switch
+                {
+                    <= 5 => LieType.Green,
+                    <= 20 => _rand.NextDouble() < 0.65 ? LieType.Green : LieType.Rough,
+                    _ => _rand.NextDouble() < 0.85 ? LieType.Rough : LieType.Sand
+                };
+            }
+            else
+            {
+                newLie = remaining < 30
+                    ? LieType.Green
+                    : _lies.GetNextLie(lie, remaining, _dna);
+            }
 
             Log($"Shot {shotN}: Hit {clubName} {shotDist:F0} yards. Lie: {newLie}. {remaining:F0} yards remaining.");
 
@@ -180,5 +277,13 @@ public class SimulationService
 
     private static string FormatToPar(int diff) =>
         diff == 0 ? "E" : (diff > 0 ? $"+{diff}" : diff.ToString());
+
+    private int SampleExtraStrokes(double expectedPerHole)
+    {
+        if (expectedPerHole <= 0) return 0;
+        var whole = (int)Math.Floor(expectedPerHole);
+        var fractional = expectedPerHole - whole;
+        return whole + (_rand.NextDouble() < fractional ? 1 : 0);
+    }
     #endregion
 }

@@ -1,4 +1,5 @@
-﻿using ArccosScraper.Models;
+using ArccosScraper.Models;
+using System.Net;
 using System.Text.Json;
 
 namespace ArccosScraper.Services;
@@ -61,6 +62,10 @@ public class ArccosDataService : IArccosDataService
         var url = $"/sga/getDashboardAnalysis/{_userId}?goalHcp=-18&noOfRounds=20";
         var client = _httpClientFactory.CreateClient("ArccosApiClient");
         var response = await client.GetAsync(url);
+
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
         response.EnsureSuccessStatusCode();
 
         var content = await response.Content.ReadAsStringAsync();

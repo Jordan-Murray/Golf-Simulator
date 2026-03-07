@@ -1,4 +1,5 @@
-﻿using ArccosScraper.Models;
+using ArccosScraper.Models;
+using Microsoft.VisualBasic.FileIO;
 using System.Globalization;
 
 namespace Simulation.Services;
@@ -8,15 +9,24 @@ public static class CsvDataReaderService
     public static List<ComprehensiveShotRecord> ReadShots(string filePath)
     {
         var records = new List<ComprehensiveShotRecord>();
-        var lines = File.ReadAllLines(filePath).Skip(1); // Skip header row
 
-        foreach (var line in lines)
+        using var parser = new TextFieldParser(filePath);
+        parser.SetDelimiters(",");
+        parser.HasFieldsEnclosedInQuotes = true;
+
+        // Skip header row.
+        if (!parser.EndOfData)
+            parser.ReadFields();
+
+        while (!parser.EndOfData)
         {
-            var values = line.Split(',').Select(v => v.Trim('"')).ToArray();
+            var values = parser.ReadFields();
+            if (values == null)
+                continue;
 
             if (values.Length < 31)
             {
-                Console.WriteLine($"Skipping malformed CSV line: Not enough columns. Line: {line}");
+                Console.WriteLine("Skipping malformed CSV line: Not enough columns.");
                 continue;
             }
 
@@ -65,9 +75,10 @@ public static class CsvDataReaderService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Skipping line due to parsing error: {ex.Message}. Line: {line}");
+                Console.WriteLine($"Skipping line due to parsing error: {ex.Message}.");
             }
         }
+
         return records;
     }
 
@@ -77,6 +88,7 @@ public static class CsvDataReaderService
         {
             return null;
         }
+
         return double.Parse(value, CultureInfo.InvariantCulture);
     }
 }

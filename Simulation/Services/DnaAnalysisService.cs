@@ -12,15 +12,16 @@ public class DnaAnalysisService
 
         // 1. Analyze club performance (non-putts)
         var jsonContent = File.ReadAllText(smartDistancesJsonPath);
-        var smartData = JsonSerializer.Deserialize<List<SmartClubData>>(jsonContent);
+        var smartData = JsonSerializer.Deserialize<List<SmartClubData>>(jsonContent) ?? [];
 
         foreach (var clubData in smartData.Where(c => c.Range != null))
         {
+            var range = clubData.Range!;
             var profile = new ClubPerformanceProfile
             {
                 ClubId = clubData.ClubId,
                 // Calculate standard deviation from the provided range. A simple heuristic.
-                StandardDeviation = (clubData.Range.High - clubData.Range.Low) / 4.0
+                StandardDeviation = (range.High - range.Low) / 4.0
             };
 
             // Populate distances for different lies.
@@ -42,33 +43,58 @@ public class DnaAnalysisService
 
         foreach (var group in strategyGroups)
         {
-            var mostCommonClub = group.GroupBy(g => g.ClubId)
-                                      .OrderByDescending(c => c.Count())
-                                      .Select(c => c.Key)
-                                      .First();
+            var clubFrequencies = group.GroupBy(g => g.ClubId)
+                                       .Select(c => new { ClubId = c.Key, Count = c.Count() })
+                                       .OrderByDescending(c => c.Count)
+                                       .ToList();
+
+            var mostCommonClub = clubFrequencies[0].ClubId;
             dna.TeeShotStrategy[group.Key] = mostCommonClub;
+            dna.TeeShotDistributions[group.Key] = clubFrequencies
+                .Select(c => new TeeClubWeight
+                {
+                    ClubId = c.ClubId,
+                    Weight = c.Count / (double)group.Count()
+                })
+                .ToList();
         }
 
         // What's your overall fairway hit percentage?
-        var drivingShots = historicalShots.Where(s => s.ClubId == 1 || s.ClubId == 17).ToList();
+        var drivingShots = historicalShots
+            .Where(s => s.ShotNumberInHole == 1 && (s.ClubId == 1 || s.ClubId == 17))
+            .ToList();
         if (drivingShots.Any())
         {
             dna.FairwayHitPercentage = drivingShots.Count(s => s.HoleIsFairway) / (double)drivingShots.Count;
         }
-
-        var analysisJson = File.ReadAllText(dashboardAnalysisJsonPath);
-        var analysisData = JsonSerializer.Deserialize<DashboardAnalysis>(analysisJson);
-
-        if (analysisData != null)
+        else
         {
-            var puttStats = analysisData.Putting.AveragePuttsPerRound;
-            dna.PuttingStatistics = new PuttingProfile
+            dna.FairwayHitPercentage = 0.5;
+        }
+
+        DashboardAnalysis? analysisData = null;
+        if (File.Exists(dashboardAnalysisJsonPath))
+        {
+            try
+            {
+                var analysisJson = File.ReadAllText(dashboardAnalysisJsonPath);
+                analysisData = JsonSerializer.Deserialize<DashboardAnalysis>(analysisJson);
+            }
+            catch
+            {
+                analysisData = null;
+            }
+        }
+
+        var puttStats = analysisData?.Putting?.AveragePuttsPerRound;
+        dna.PuttingStatistics = puttStats == null
+            ? new PuttingProfile { OnePuttPercentage = 8, TwoPuttPercentage = 82, ThreePuttPercentage = 10 }
+            : new PuttingProfile
             {
                 OnePuttPercentage = puttStats.OnePutt.Value,
                 TwoPuttPercentage = puttStats.TwoPutt.Value,
                 ThreePuttPercentage = puttStats.ThreePutt.Value
             };
-        }
 
         return dna;
     }
