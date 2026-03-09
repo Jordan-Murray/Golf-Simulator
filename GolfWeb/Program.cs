@@ -17,7 +17,7 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 });
 builder.Services.AddOptions<AppPathsOptions>()
     .Bind(builder.Configuration.GetSection("AppPaths"))
-    .PostConfigure(o => ApplyPathDefaults(o, repoRoot));
+    .PostConfigure(o => AppPathDefaults.Apply(o, repoRoot));
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 if (allowedOrigins.Length > 0)
@@ -164,28 +164,6 @@ static string? FindRepoRootOrNull()
     return null;
 }
 
-static void ApplyPathDefaults(AppPathsOptions o, string repoRoot)
-{
-    var visualizationRoot = string.IsNullOrWhiteSpace(o.VisualizationRoot)
-        ? Path.Combine(repoRoot, "Visualization")
-        : o.VisualizationRoot;
-
-    o.VisualizationRoot = visualizationRoot;
-    o.VisualizationDataPath = DefaultIfEmpty(o.VisualizationDataPath, Path.Combine(visualizationRoot, "data", "visualization_data.json"));
-    o.CourseGeometryPath = DefaultIfEmpty(o.CourseGeometryPath, Path.Combine(visualizationRoot, "data", "course_geometry.json"));
-
-    var scraperOut = Path.Combine(repoRoot, "ArccosScraper", "bin", "Debug", "net9.0");
-    o.CsvPath = DefaultIfEmpty(o.CsvPath, Path.Combine(scraperOut, "arccos_shot_data_comprehensive.csv"));
-    o.SmartDistancesPath = DefaultIfEmpty(o.SmartDistancesPath, Path.Combine(scraperOut, "smart_distances.json"));
-    o.DashboardPath = DefaultIfEmpty(o.DashboardPath, Path.Combine(scraperOut, "dashboard_analysis.json"));
-    o.SimulationSettingsPath = DefaultIfEmpty(o.SimulationSettingsPath, Path.Combine(repoRoot, "Simulation", "simulation_settings.json"));
-}
-
-static string DefaultIfEmpty(string value, string fallback)
-{
-    return string.IsNullOrWhiteSpace(value) ? fallback : value;
-}
-
 public sealed class VisualizationPayload
 {
     public List<VisualizationRound> Rounds { get; set; } = [];
@@ -197,3 +175,5 @@ public sealed class VisualizationRound
     public string Date { get; set; } = string.Empty;
     public int TotalScore { get; set; }
 }
+
+public partial class Program;
