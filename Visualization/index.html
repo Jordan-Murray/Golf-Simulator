@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Golf 3D — Shot Visualizer</title>
+    <title>Golf 3D - Shot Visualizer</title>
     <link rel="stylesheet" href="css/style.css" />
     <script type="importmap">
     {
@@ -15,53 +15,57 @@
     </script>
 </head>
 <body>
-
-    <!-- Loading -->
-    <div id="loading">Loading visualization data…</div>
-
-    <!-- 3D Canvas -->
+    <div id="loading">Loading visualization data...</div>
     <canvas id="canvas"></canvas>
 
-    <!-- Top Bar -->
     <div id="top-bar">
-        <span id="course-name">—</span>
-        <span id="round-info">—</span>
+        <span id="course-name">-</span>
+        <span id="round-info">-</span>
         <select id="round-select"></select>
     </div>
 
-    <!-- Hole Info (left) -->
     <div id="hole-panel">
         <div id="hole-title">Hole 1</div>
         <div id="hole-par">Par 4</div>
-        <div id="hole-score">—</div>
+        <div id="hole-score">-</div>
     </div>
 
-    <!-- Shot Info (right) -->
     <div id="shot-panel">
         <div id="shot-num">On the tee</div>
-        <div id="shot-club">—</div>
-        <div id="shot-dist">—</div>
+        <div id="shot-club">-</div>
+        <div id="shot-dist">-</div>
     </div>
 
-    <!-- Playback Controls -->
+    <div id="geometry-debug">
+        <div id="geometry-debug-title">Geometry Debug</div>
+        <pre id="geometry-debug-body">Waiting for hole...</pre>
+    </div>
+
     <div id="controls">
-        <button class="ctrl-btn" id="btn-prev-hole" title="Previous Hole">◀◀</button>
-        <button class="ctrl-btn" id="btn-prev-shot" title="Previous Shot">◀</button>
+        <button class="ctrl-btn" id="btn-prev-hole" title="Previous Hole"><<</button>
+        <button class="ctrl-btn" id="btn-prev-shot" title="Previous Shot"><</button>
         <div class="ctrl-divider"></div>
-        <button class="ctrl-btn play" id="btn-play" title="Play / Pause">▶</button>
+        <button class="ctrl-btn play" id="btn-play" title="Play / Pause">Play</button>
         <div class="ctrl-divider"></div>
-        <button class="ctrl-btn" id="btn-next-shot" title="Next Shot">▶</button>
-        <button class="ctrl-btn" id="btn-next-hole" title="Next Hole">▶▶</button>
+        <button class="ctrl-btn" id="btn-next-shot" title="Next Shot">></button>
+        <button class="ctrl-btn" id="btn-next-hole" title="Next Hole">>></button>
     </div>
 
-    <!-- Scorecard -->
+    <div id="timeline-panel">
+        <input id="shot-timeline" type="range" min="0" max="1" step="0.01" value="0" />
+        <div id="timeline-label">Tee</div>
+        <label id="cinematic-wrap">
+            <input id="cinematic-mode" type="checkbox" checked />
+            <span>Cinematic Mode</span>
+        </label>
+    </div>
+
     <div id="scorecard-bar">
         <div id="scorecard"></div>
     </div>
 
-    <!-- Keyboard hint -->
-    <div id="kb-hint">← → shots &nbsp; ↑ ↓ holes &nbsp; Space play</div>
+    <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug</div>
 
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js?v=20260309h"></script>
 </body>
 </html>

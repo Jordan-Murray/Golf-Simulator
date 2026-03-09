@@ -13,7 +13,10 @@ public static class ClubPerformanceProfileExtensions
                     ? distance
                     : profile.DistanceByLie.GetValueOrDefault(LieType.Default, 0);
 
-        var stdDev = profile.StandardDeviation * accuracyMultiplier;
+        if (mean <= 0) return 1;
+
+        var accuracyImpact = 1.0 + ((accuracyMultiplier - 1.0) * 0.45);
+        var stdDev = Math.Max(2, profile.StandardDeviation * accuracyImpact);
 
         // Box–Muller transform for Gaussian randomness
         var u1 = 1.0 - _rand.NextDouble();
@@ -21,7 +24,10 @@ public static class ClubPerformanceProfileExtensions
         var randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) *
                             Math.Sin(2.0 * Math.PI * u2);
 
-        var result = mean + stdDev * randStdNormal;
+        var raw = mean + stdDev * randStdNormal;
+        var lower = Math.Max(1, mean - (2.5 * stdDev));
+        var upper = Math.Min(mean + (2.5 * stdDev), (mean * 1.35) + 15);
+        var result = Math.Clamp(raw, lower, upper);
         return Math.Max(1, result); // never negative or zero
     }
 

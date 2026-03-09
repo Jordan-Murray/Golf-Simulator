@@ -176,7 +176,7 @@ static double ProbeAverageScorePerHole(
 
     var sim = new SimulationService(
         dna,
-        new DefaultClubSelector(),
+        new DefaultClubSelector(probeSettings),
         new DefaultLieManager(),
         new DefaultPuttingModel(dna, probeSettings),
         new DefaultPenaltyManager(probeSettings),
@@ -202,5 +202,15 @@ static SimulationSettings CloneSettings(SimulationSettings src) =>
         OverallAccuracyMultiplier = src.OverallAccuracyMultiplier,
         AutoCalibrateFromHistoricalData = src.AutoCalibrateFromHistoricalData,
         AutoCalibrationBlend = src.AutoCalibrationBlend,
-        ExtraStrokesPerHole = src.ExtraStrokesPerHole
+        ExtraStrokesPerHole = src.ExtraStrokesPerHole,
+        AvoidClubIds = [.. src.AvoidClubIds],
+        GoodRoundChance = src.GoodRoundChance,
+        OffRoundChance = src.OffRoundChance,
+        GoodRoundAccuracyFactor = src.GoodRoundAccuracyFactor,
+        OffRoundAccuracyFactor = src.OffRoundAccuracyFactor,
+        GoodRoundTroubleFactor = src.GoodRoundTroubleFactor,
+        OffRoundTroubleFactor = src.OffRoundTroubleFactor,
+        BlowupHoleChancePerHole = src.BlowupHoleChancePerHole,
+        BlowupExtraStrokesMin = src.BlowupExtraStrokesMin,
+        BlowupExtraStrokesMax = src.BlowupExtraStrokesMax
     };

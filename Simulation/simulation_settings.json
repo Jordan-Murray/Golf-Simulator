@@ -5,5 +5,15 @@
   "OverallAccuracyMultiplier": 1.0,
   "AutoCalibrateFromHistoricalData": true,
   "AutoCalibrationBlend": 0.7,
-  "ExtraStrokesPerHole": 0
+  "ExtraStrokesPerHole": 0,
+  "AvoidClubIds": [12, 17],
+  "GoodRoundChance": 0.2,
+  "OffRoundChance": 0.3,
+  "GoodRoundAccuracyFactor": 0.9,
+  "OffRoundAccuracyFactor": 1.15,
+  "GoodRoundTroubleFactor": 0.8,
+  "OffRoundTroubleFactor": 1.3,
+  "BlowupHoleChancePerHole": 0.12,
+  "BlowupExtraStrokesMin": 1,
+  "BlowupExtraStrokesMax": 3
 }

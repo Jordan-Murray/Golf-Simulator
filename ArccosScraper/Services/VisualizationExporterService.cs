@@ -1,4 +1,5 @@
 using ArccosScraper.Models;
+using Microsoft.VisualBasic.FileIO;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -111,8 +112,10 @@ public static class VisualizationExporterService
             var startLocal = RotatePoint(sRawX, sRawZ, -angle);
             var endLocal = RotatePoint(eRawX, eRawZ, -angle);
 
-            var startY = (shot.StartAltitude ?? teeAlt) - teeAlt;
-            var endY = (shot.EndAltitude ?? teeAlt) - teeAlt;
+            var startAlt = shot.StartAltitude ?? teeAlt;
+            var endAlt = shot.EndAltitude ?? startAlt;
+            var startY = startAlt - teeAlt;
+            var endY = endAlt - teeAlt;
 
             if (shot.EndAltitude.HasValue)
                 lastAltitude = shot.EndAltitude.Value;
@@ -182,9 +185,20 @@ public static class VisualizationExporterService
     {
         var records = new List<ComprehensiveShotRecord>();
 
-        foreach (var line in File.ReadAllLines(path).Skip(1))
+        using var parser = new TextFieldParser(path);
+        parser.SetDelimiters(",");
+        parser.HasFieldsEnclosedInQuotes = true;
+        parser.TrimWhiteSpace = false;
+
+        _ = parser.ReadFields(); // header
+        while (!parser.EndOfData)
         {
-            var v = line.Split(',').Select(s => s.Trim('"')).ToArray();
+            var v = parser.ReadFields();
+            if (v is null)
+            {
+                continue;
+            }
+
             if (v.Length < 31) continue;
 
             try

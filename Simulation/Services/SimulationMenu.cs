@@ -100,6 +100,27 @@ public class SimulationMenu
         Console.WriteLine($"Best Round : {best.TotalScore} ({ToPar(best.ScoreToPar)})");
         Console.WriteLine($"Worst Round: {worst.TotalScore} ({ToPar(worst.ScoreToPar)})");
         Console.WriteLine($"Average    : {avg:F1} ({ToPar((int)Math.Round(avg - par))})");
+
+        var allShots = _history
+            .SelectMany(r => r.Holes)
+            .SelectMany(h => h.Shots)
+            .Where(s => s.ClubUsed > 0 && s.ClubUsed != GolferDna.PutterClubId)
+            .ToList();
+
+        if (allShots.Count > 0)
+        {
+            Console.WriteLine("\nEstimated Club Usage (simulated):");
+            var usage = allShots
+                .GroupBy(s => s.ClubUsed)
+                .Select(g => new { ClubId = g.Key, Count = g.Count(), Pct = 100.0 * g.Count() / allShots.Count })
+                .OrderByDescending(x => x.Count);
+
+            foreach (var u in usage)
+            {
+                Console.WriteLine($"  {ClubNameMapper.GetClubName(u.ClubId),-22} {u.Pct,5:F1}% ({u.Count})");
+            }
+        }
+
         Console.WriteLine("--------------------------------------------------");
     }
 

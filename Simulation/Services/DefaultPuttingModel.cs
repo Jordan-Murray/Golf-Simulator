@@ -8,6 +8,9 @@ public class DefaultPuttingModel(GolferDna dna, SimulationSettings settings) : I
     private readonly double _onePuttPct = NormalizeToPercent(dna.PuttingStatistics.OnePuttPercentage);
     private readonly double _twoPuttPct = NormalizeToPercent(dna.PuttingStatistics.TwoPuttPercentage);
     private readonly double _threePuttPct = NormalizeToPercent(dna.PuttingStatistics.ThreePuttPercentage);
+    private readonly List<PuttingBandProfile> _bandProfiles = dna.PuttingBandProfiles
+        .OrderBy(p => p.MaxDistanceFeet)
+        .ToList();
 
     public (double distanceTravelled, bool holed, int extraStrokes) Putt(double distanceToHoleYards)
     {
@@ -26,10 +29,11 @@ public class DefaultPuttingModel(GolferDna dna, SimulationSettings settings) : I
             return (travelled, false, 1);
         }
 
-        var totalPct = _onePuttPct + _twoPuttPct + _threePuttPct;
+        var (onePuttPct, twoPuttPct, threePuttPct) = GetPuttProbabilities(feet);
+        var totalPct = onePuttPct + twoPuttPct + threePuttPct;
         var scale = totalPct > 100 ? 100.0 / totalPct : 1.0;
-        var onePuttThreshold = totalPct > 0 ? _onePuttPct * scale : 8;
-        var twoPuttThreshold = totalPct > 0 ? (_onePuttPct + _twoPuttPct) * scale : 8 + 82;
+        var onePuttThreshold = totalPct > 0 ? onePuttPct * scale : 8;
+        var twoPuttThreshold = totalPct > 0 ? (onePuttPct + twoPuttPct) * scale : 8 + 82;
 
         if (r < onePuttThreshold)
         {
@@ -58,5 +62,19 @@ public class DefaultPuttingModel(GolferDna dna, SimulationSettings settings) : I
         if (value <= 0) return 0;
         if (value <= 1) return value * 100;
         return Math.Min(100, value);
+    }
+
+    private (double one, double two, double three) GetPuttProbabilities(double feet)
+    {
+        if (_bandProfiles.Count > 0)
+        {
+            var band = _bandProfiles.FirstOrDefault(b => feet <= b.MaxDistanceFeet) ?? _bandProfiles[^1];
+            return (
+                NormalizeToPercent(band.OnePuttPercentage),
+                NormalizeToPercent(band.TwoPuttPercentage),
+                NormalizeToPercent(band.ThreePuttPercentage));
+        }
+
+        return (_onePuttPct, _twoPuttPct, _threePuttPct);
     }
 }

@@ -28,4 +28,34 @@ public class SimulationSettings
     /// (short game errors, recovery shots, decision mistakes not captured elsewhere).
     /// </summary>
     public double ExtraStrokesPerHole { get; set; }
+
+    /// <summary>Club IDs to avoid in selection logic unless no viable alternatives exist.</summary>
+    public List<int> AvoidClubIds { get; set; } = [];
+
+    /// <summary>Chance a simulated round is a "good form" day.</summary>
+    public double GoodRoundChance { get; set; } = 0.2;
+
+    /// <summary>Chance a simulated round is an "off form" day.</summary>
+    public double OffRoundChance { get; set; } = 0.3;
+
+    /// <summary>Multiplier applied to shot-dispersion on good-form days.</summary>
+    public double GoodRoundAccuracyFactor { get; set; } = 0.9;
+
+    /// <summary>Multiplier applied to shot-dispersion on off-form days.</summary>
+    public double OffRoundAccuracyFactor { get; set; } = 1.15;
+
+    /// <summary>Multiplier applied to per-hole trouble events on good-form days.</summary>
+    public double GoodRoundTroubleFactor { get; set; } = 0.8;
+
+    /// <summary>Multiplier applied to per-hole trouble events on off-form days.</summary>
+    public double OffRoundTroubleFactor { get; set; } = 1.3;
+
+    /// <summary>Probability of a blow-up hole event on each hole.</summary>
+    public double BlowupHoleChancePerHole { get; set; } = 0.12;
+
+    /// <summary>Minimum extra non-putt strokes added when a blow-up hole triggers.</summary>
+    public int BlowupExtraStrokesMin { get; set; } = 1;
+
+    /// <summary>Maximum extra non-putt strokes added when a blow-up hole triggers.</summary>
+    public int BlowupExtraStrokesMax { get; set; } = 3;
 }

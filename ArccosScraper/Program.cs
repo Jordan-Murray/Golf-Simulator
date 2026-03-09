@@ -145,7 +145,9 @@ async Task FetchDashboardAnalysis()
 void ExportVisualizationData()
 {
     const string csvPath = "arccos_shot_data_comprehensive.csv";
-    const string vizOutputPath = "visualization_data.json";
+    var repoRoot = FindRepoRootOrNull() ?? Directory.GetCurrentDirectory();
+    var vizDataDir = Path.Combine(repoRoot, "Visualization", "data");
+    var vizOutputPath = Path.Combine(vizDataDir, "visualization_data.json");
 
     if (!File.Exists(csvPath))
     {
@@ -154,10 +156,96 @@ void ExportVisualizationData()
         return;
     }
 
+    Directory.CreateDirectory(vizDataDir);
+
     Console.WriteLine("\nExporting 3D visualization data...");
     VisualizationExporterService.Export(csvPath, vizOutputPath);
     Console.WriteLine($"Visualization data saved to {Path.GetFullPath(vizOutputPath)}");
-    Console.WriteLine("Copy this file to Visualization/data/ to use with the 3D viewer.");
+}
+
+void ImportCourseGeometry()
+{
+    const string csvPath = "arccos_shot_data_comprehensive.csv";
+    if (!File.Exists(csvPath))
+    {
+        Console.WriteLine($"\nCSV file not found: {csvPath}");
+        Console.WriteLine("Fetch shot data first (option 2).");
+        return;
+    }
+
+    Console.WriteLine("\nEnter path to source geometry file (.geojson/.json/.kml):");
+    var sourcePathInput = Console.ReadLine()?.Trim();
+    if (string.IsNullOrWhiteSpace(sourcePathInput))
+    {
+        Console.WriteLine("No source file provided.");
+        return;
+    }
+
+    var sourcePath = Path.GetFullPath(sourcePathInput);
+    if (!File.Exists(sourcePath))
+    {
+        Console.WriteLine($"Source file not found: {sourcePath}");
+        return;
+    }
+
+    var repoRoot = FindRepoRootOrNull() ?? Directory.GetCurrentDirectory();
+    var defaultOut = Path.Combine(repoRoot, "Visualization", "data", "course_geometry.json");
+    Console.WriteLine($"Output path (Enter for default): {defaultOut}");
+    var outInput = Console.ReadLine()?.Trim();
+    var outputPath = string.IsNullOrWhiteSpace(outInput) ? defaultOut : Path.GetFullPath(outInput);
+
+    try
+    {
+        Console.WriteLine("\nImporting course geometry...");
+        CourseGeometryImportService.Import(sourcePath, csvPath, outputPath);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Geometry import failed: {ex.Message}");
+    }
+}
+
+void ValidateCourseGeometrySource()
+{
+    Console.WriteLine("\nEnter path to geometry source file to validate (.geojson/.json/.kml):");
+    var sourcePathInput = Console.ReadLine()?.Trim();
+    if (string.IsNullOrWhiteSpace(sourcePathInput))
+    {
+        Console.WriteLine("No source file provided.");
+        return;
+    }
+
+    var sourcePath = Path.GetFullPath(sourcePathInput);
+    if (!File.Exists(sourcePath))
+    {
+        Console.WriteLine($"Source file not found: {sourcePath}");
+        return;
+    }
+
+    try
+    {
+        CourseGeometryImportService.ValidateSource(sourcePath);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Validation failed: {ex.Message}");
+    }
+}
+
+string? FindRepoRootOrNull()
+{
+    var probe = new DirectoryInfo(Directory.GetCurrentDirectory());
+    while (probe != null)
+    {
+        var arccosDir = Path.Combine(probe.FullName, "ArccosScraper");
+        var visualizationDir = Path.Combine(probe.FullName, "Visualization");
+        if (Directory.Exists(arccosDir) && Directory.Exists(visualizationDir))
+            return probe.FullName;
+
+        probe = probe.Parent;
+    }
+
+    return null;
 }
 
 // --- The Menu Loop ---
@@ -169,7 +257,9 @@ while (true)
     Console.WriteLine("3. Fetch Smart Distances Only");
     Console.WriteLine("4. Fetch Dashboard Analysis Only");
     Console.WriteLine("5. Export 3D Visualization Data");
-    Console.WriteLine("6. Exit");
+    Console.WriteLine("6. Import Course Geometry (GeoJSON/KML)");
+    Console.WriteLine("7. Validate Geometry Source (GeoJSON/KML)");
+    Console.WriteLine("8. Exit");
     Console.Write("Enter your choice: ");
 
     var choice = Console.ReadLine();
@@ -193,6 +283,12 @@ while (true)
             ExportVisualizationData();
             break;
         case "6":
+            ImportCourseGeometry();
+            break;
+        case "7":
+            ValidateCourseGeometrySource();
+            break;
+        case "8":
             return;
         default:
             Console.WriteLine("Invalid choice. Please try again.");

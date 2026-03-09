@@ -59,6 +59,30 @@ public class DnaAnalysisService
                 .ToList();
         }
 
+        var usageSamples = historicalShots
+            .Where(s => s.ClubId > 0 && s.ClubId != GolferDna.PutterClubId)
+            .ToList();
+        if (usageSamples.Count > 0)
+        {
+            var byClub = usageSamples.GroupBy(s => s.ClubId);
+            foreach (var grp in byClub)
+            {
+                dna.ClubUsagePercentage[grp.Key] = grp.Count() / (double)usageSamples.Count;
+
+                var ordered = grp.Select(s => s.Distance).OrderBy(d => d).ToList();
+                if (ordered.Count > 0)
+                {
+                    var idx = (int)Math.Floor((ordered.Count - 1) * 0.95);
+                    dna.ClubPracticalMaxDistance[grp.Key] = ordered[Math.Clamp(idx, 0, ordered.Count - 1)];
+
+                    var p25Idx = (int)Math.Floor((ordered.Count - 1) * 0.25);
+                    var p75Idx = (int)Math.Floor((ordered.Count - 1) * 0.75);
+                    dna.ClubDistanceP25[grp.Key] = ordered[Math.Clamp(p25Idx, 0, ordered.Count - 1)];
+                    dna.ClubDistanceP75[grp.Key] = ordered[Math.Clamp(p75Idx, 0, ordered.Count - 1)];
+                }
+            }
+        }
+
         // What's your overall fairway hit percentage?
         var drivingShots = historicalShots
             .Where(s => s.ShotNumberInHole == 1 && (s.ClubId == 1 || s.ClubId == 17))

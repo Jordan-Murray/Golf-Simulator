@@ -59,13 +59,103 @@ export function createScene(canvas) {
     return { scene, camera, renderer, controls, sun };
 }
 
-export function frameHole(camera, controls, holeData) {
-    const pin = holeData.pin;
-    const holeLength = pin.z;
-    const midZ = holeLength / 2;
+export function frameHole(camera, controls, holeData, holeGeometry = null) {
+    const points = [{ x: 0, z: 0 }, { x: holeData.pin.x, z: holeData.pin.z }];
+    for (const shot of holeData.shots ?? []) {
+        points.push({ x: shot.start.x, z: shot.start.z });
+        points.push({ x: shot.end.x, z: shot.end.z });
+    }
+    for (const p of getGeometryPoints(holeGeometry)) {
+        points.push(p);
+    }
 
-    // Position camera behind and above the tee, looking down the hole
-    camera.position.set(0, Math.max(60, holeLength * 0.18), -holeLength * 0.15);
-    controls.target.set(0, 0, midZ);
+    const xs = points.map(p => p.x);
+    const zs = points.map(p => p.z);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minZ = Math.min(...zs);
+    const maxZ = Math.max(...zs);
+    const center = new THREE.Vector2((minX + maxX) / 2, (minZ + maxZ) / 2);
+
+    const tee = new THREE.Vector2(0, 0);
+    const pin = new THREE.Vector2(holeData.pin.x, holeData.pin.z);
+    const vec = pin.clone().sub(tee);
+    const dir = vec.length() > 0.1 ? vec.clone().normalize() : new THREE.Vector2(0, 1);
+    const perp = new THREE.Vector2(-dir.y, dir.x);
+
+    const span = Math.max(140, maxX - minX, maxZ - minZ, vec.length());
+    const camBack = span * 0.62;
+    const camSide = span * 0.06;
+    const camHeight = Math.max(85, span * 0.34);
+    const target = tee.clone().add(dir.clone().multiplyScalar(span * 0.58));
+
+    // Keep a stable "tee behind, pin ahead" framing so hole direction reads intuitively.
+    camera.position.set(
+        tee.x - dir.x * camBack + perp.x * camSide,
+        camHeight,
+        tee.y - dir.y * camBack + perp.y * camSide
+    );
+    controls.target.set(target.x, 0, target.y);
     controls.update();
+}
+
+export function focusCameraForPutt(camera, controls, holeData, shot, ballPos = null, deltaTime = 1 / 60) {
+    if (!holeData || !shot) return;
+
+    const fallbackStart = new THREE.Vector2(Number(shot.start?.x ?? 0), Number(shot.start?.z ?? 0));
+    const ball = ballPos
+        ? new THREE.Vector2(Number(ballPos.x), Number(ballPos.z))
+        : fallbackStart;
+    const pin = new THREE.Vector2(
+        Number(holeData.pin?.x ?? shot.end?.x ?? 0),
+        Number(holeData.pin?.z ?? shot.end?.z ?? 0)
+    );
+
+    const toPin = pin.clone().sub(ball);
+    const dir2 = toPin.length() > 0.2 ? toPin.clone().normalize() : new THREE.Vector2(0, 1);
+    if (!Number.isFinite(dir2.x) || !Number.isFinite(dir2.y)) return;
+
+    const perp2 = new THREE.Vector2(-dir2.y, dir2.x);
+    const span = Math.max(1.2, toPin.length());
+    const mid = ball.clone().add(pin).multiplyScalar(0.5);
+    const back = Math.max(6.0, Math.min(24.0, span * 1.55));
+    const side = Math.max(1.6, Math.min(6.0, span * 0.16));
+    const height = Math.max(5.0, Math.min(15.0, 4.4 + span * 0.42));
+
+    const desiredTarget = new THREE.Vector3(mid.x, 0, mid.y);
+    const desiredPos = new THREE.Vector3(
+        mid.x - dir2.x * back + perp2.x * side,
+        height,
+        mid.y - dir2.y * back + perp2.y * side
+    );
+
+    const alpha = 1 - Math.exp(-Math.max(0.001, deltaTime) * 7.5);
+    camera.position.lerp(desiredPos, alpha);
+    controls.target.lerp(desiredTarget, alpha);
+}
+
+function getGeometryPoints(holeGeometry) {
+    if (!holeGeometry) return [];
+    const points = [];
+
+    const collect = arr => {
+        if (!Array.isArray(arr)) return;
+        for (const p of arr) {
+            if (Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+                points.push({ x: p[0], z: p[1] });
+            } else if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) {
+                points.push({ x: p.x, z: p.z });
+            }
+        }
+    };
+
+    collect(holeGeometry.tee);
+    collect(holeGeometry.fairway);
+    collect(holeGeometry.green);
+    collect(holeGeometry.trees);
+
+    for (const poly of holeGeometry.bunkers ?? []) collect(poly);
+    for (const poly of holeGeometry.water ?? []) collect(poly);
+
+    return points;
 }

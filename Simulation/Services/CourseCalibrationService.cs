@@ -30,6 +30,8 @@ public sealed class CourseCalibrationService
         CalibrateTeeStrategy(courseShots, dna);
         CalibrateFairwayHitRate(courseShots, dna);
         CalibratePutting(courseShots, dna, settings, blend);
+        CalibrateShortGame(courseShots, dna, settings, blend);
+        CalibrateClubDispersion(courseShots, dna, blend);
         CalibratePenalties(courseShots, settings, blend, report);
         CalibrateDistanceAndAccuracy(courseShots, dna, settings, blend);
 
@@ -113,11 +115,19 @@ public sealed class CourseCalibrationService
 
         var attempts = 0;
         var makes = 0;
+        var firstPuttSnapshots = new List<(double StartFeet, int PuttsOnHole)>();
 
         foreach (var holeShots in holeGroups)
         {
             var ordered = holeShots.OrderBy(s => s.ShotNumberInHole).ToList();
             var finalShotNumber = ordered[^1].ShotNumberInHole;
+            var firstPutt = ordered.FirstOrDefault(s => s.ClubId == GolferDna.PutterClubId);
+            if (firstPutt != null)
+            {
+                var firstFeet = putterMedian <= 12 ? firstPutt.Distance : firstPutt.Distance * 3.0;
+                var puttsOnHole = Math.Max(1, ordered[0].HolePutts);
+                firstPuttSnapshots.Add((firstFeet, puttsOnHole));
+            }
 
             foreach (var shot in ordered.Where(s => s.ClubId == GolferDna.PutterClubId && s.Distance <= threshold))
             {
@@ -132,6 +142,69 @@ public sealed class CourseCalibrationService
 
         var inside6MakePct = 100.0 * makes / attempts;
         settings.MakePercentageInside6Feet = Blend(settings.MakePercentageInside6Feet, inside6MakePct, blend);
+
+        if (firstPuttSnapshots.Count > 0)
+            dna.PuttingBandProfiles = BuildPuttingBandProfiles(firstPuttSnapshots);
+    }
+
+    private static List<PuttingBandProfile> BuildPuttingBandProfiles(List<(double StartFeet, int PuttsOnHole)> samples)
+    {
+        var bands = new[] { 6.0, 12.0, 20.0, 35.0, 80.0 };
+        var profiles = new List<PuttingBandProfile>();
+
+        foreach (var maxFeet in bands)
+        {
+            var minFeet = profiles.Count == 0 ? 0 : profiles[^1].MaxDistanceFeet;
+            var bucket = samples
+                .Where(s => s.StartFeet > minFeet && s.StartFeet <= maxFeet)
+                .ToList();
+
+            if (bucket.Count < 6)
+                continue;
+
+            var one = 100.0 * bucket.Count(s => s.PuttsOnHole <= 1) / bucket.Count;
+            var two = 100.0 * bucket.Count(s => s.PuttsOnHole == 2) / bucket.Count;
+            var three = 100.0 * bucket.Count(s => s.PuttsOnHole >= 3) / bucket.Count;
+
+            profiles.Add(new PuttingBandProfile
+            {
+                MaxDistanceFeet = maxFeet,
+                OnePuttPercentage = one,
+                TwoPuttPercentage = two,
+                ThreePuttPercentage = three
+            });
+        }
+
+        return profiles;
+    }
+
+    private static void CalibrateClubDispersion(
+        List<ComprehensiveShotRecord> courseShots,
+        GolferDna dna,
+        double blend)
+    {
+        foreach (var profile in dna.ClubProfiles.Values.Where(c => c.ClubId != GolferDna.PutterClubId))
+        {
+            var samples = courseShots
+                .Where(s => s.ClubId == profile.ClubId && s.Distance >= 20)
+                .Select(s => s.Distance)
+                .OrderBy(d => d)
+                .ToList();
+
+            if (samples.Count < 12)
+                continue;
+
+            var trim = (int)Math.Floor(samples.Count * 0.10);
+            var trimmed = samples.Skip(trim).Take(samples.Count - (2 * trim)).ToList();
+            if (trimmed.Count < 6)
+                continue;
+
+            var mean = trimmed.Average();
+            var variance = trimmed.Average(v => Math.Pow(v - mean, 2));
+            var observedStdDev = Math.Sqrt(variance);
+            var targetStdDev = Clamp(observedStdDev, 4, 55);
+            profile.StandardDeviation = Blend(profile.StandardDeviation, targetStdDev, blend);
+        }
     }
 
     private static void CalibratePenalties(
@@ -161,6 +234,76 @@ public sealed class CourseCalibrationService
 
         var normalizedPer18 = avgPenaltiesPerRound * (18.0 / avgHolesPerRound);
         settings.AveragePenaltiesPer18Holes = Blend(settings.AveragePenaltiesPer18Holes, normalizedPer18, blend);
+
+        var holeScores = courseShots
+            .GroupBy(s => new { s.RoundId, s.HoleNumber })
+            .Select(g => g.Count() + g.Sum(s => s.Penalties))
+            .ToList();
+
+        if (holeScores.Count > 0)
+        {
+            var blowupRate = holeScores.Count(s => s >= 6) / (double)holeScores.Count;
+            settings.BlowupHoleChancePerHole = Blend(settings.BlowupHoleChancePerHole, Clamp(blowupRate * 0.55, 0.03, 0.35), blend);
+        }
+    }
+
+    private static void CalibrateShortGame(
+        List<ComprehensiveShotRecord> courseShots,
+        GolferDna dna,
+        SimulationSettings settings,
+        double blend)
+    {
+        var holeGroups = courseShots
+            .GroupBy(s => new { s.RoundId, s.HoleNumber })
+            .Select(g => g.OrderBy(s => s.ShotNumberInHole).ToList())
+            .ToList();
+
+        var putterShots = courseShots.Where(s => s.ClubId == GolferDna.PutterClubId).Select(s => s.Distance).OrderBy(d => d).ToList();
+        var putterMedian = putterShots.Count > 0 ? putterShots[putterShots.Count / 2] : 8.0;
+        var putterIsFeet = putterMedian <= 12;
+
+        var attempts = 0;
+        var greenHits = 0;
+        var leaveFeetSamples = new List<double>();
+        var duffCount = 0;
+
+        foreach (var hole in holeGroups)
+        {
+            var firstPuttIdx = hole.FindIndex(s => s.ClubId == GolferDna.PutterClubId);
+            if (firstPuttIdx <= 0) continue;
+
+            var shortGameShot = hole[firstPuttIdx - 1];
+            if (shortGameShot.ClubId == GolferDna.PutterClubId || shortGameShot.Distance > 60) continue;
+
+            attempts++;
+            greenHits++;
+
+            var firstPutt = hole[firstPuttIdx];
+            var leaveFeet = putterIsFeet ? firstPutt.Distance : firstPutt.Distance * 3.0;
+            leaveFeetSamples.Add(Clamp(leaveFeet, 1, 45));
+
+            if (shortGameShot.Distance <= 8)
+                duffCount++;
+        }
+
+        if (attempts == 0) return;
+
+        var observedGreenHitRate = greenHits / (double)attempts;
+        var meanLeave = leaveFeetSamples.Count > 0 ? leaveFeetSamples.Average() : 9.0;
+        var stdLeave = leaveFeetSamples.Count > 1
+            ? Math.Sqrt(leaveFeetSamples.Average(v => Math.Pow(v - meanLeave, 2)))
+            : 4.0;
+        var observedDuffChance = duffCount / (double)attempts;
+
+        dna.ShortGameProfile = new ShortGameProfile
+        {
+            GreenHitRate = Clamp(Blend(dna.ShortGameProfile.GreenHitRate, observedGreenHitRate, blend), 0.35, 0.92),
+            LeaveDistanceMeanFeet = Clamp(Blend(dna.ShortGameProfile.LeaveDistanceMeanFeet, meanLeave, blend), 3, 24),
+            LeaveDistanceStdFeet = Clamp(Blend(dna.ShortGameProfile.LeaveDistanceStdFeet, stdLeave, blend), 1.5, 12),
+            DuffChance = Clamp(Blend(dna.ShortGameProfile.DuffChance, observedDuffChance, blend), 0.02, 0.35)
+        };
+
+        settings.ExtraStrokesPerHole = Blend(settings.ExtraStrokesPerHole, Clamp(observedDuffChance * 1.4, 0, 0.9), blend * 0.5);
     }
 
     private static void CalibrateDistanceAndAccuracy(
