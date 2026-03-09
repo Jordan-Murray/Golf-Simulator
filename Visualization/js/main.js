@@ -1,7 +1,7 @@
 import { createScene, frameHole, focusCameraForPutt } from './scene.js?v=20260309i';
 import { buildHole } from './course.js?v=20260309m';
 import { buildShots, buildShotSpread, nextShot, prevShot, togglePlay, goToShot, getCurrentShot, updateAnimation, getShotCount, getPlaybackValue, seekPlayback, setCinematicMode, getBallPositionXZ } from './shots.js?v=20260309m';
-import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, onSpreadModeChange, setSpreadMode, setGeometryDebugVisible, updateHoleAnalytics, onSpreadFiltersChange, getSpreadFilters, onBestHoleReplay, setRoundSelection } from './ui.js?v=20260309k';
+import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, onSpreadModeChange, setSpreadMode, setGeometryDebugVisible, updateHoleAnalytics, onSpreadFiltersChange, getSpreadFilters, onBestHoleReplay, onWorstHoleReplay, setRoundSelection, onSimulateApi, updateSimApiSummary } from './ui.js?v=20260309o';
 
 let vizData = null;
 let geometryData = null;
@@ -19,28 +19,25 @@ const clock = { last: 0 };
 const FORCE_GEOMETRY_FLIP_180 = false;
 const STRICT_VISUAL_ANCHOR_MODE = false;
 const AUTO_MIRROR_GEOMETRY = false;
+const API_BASE = resolveApiBase();
 
 async function init() {
     initUI();
     setSpreadMode(false);
     setGeometryDebugVisible(geometryDebugVisible);
+    updateSimApiSummary('Ready. Click "Run Sim API" to request server-side simulation rounds.');
 
     try {
-        const resp = await fetch('data/visualization_data.json');
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        vizData = await resp.json();
+        vizData = await fetchApiFirstJson('/api/data/visualization', 'data/visualization_data.json');
     } catch (e) {
         document.getElementById('loading').textContent =
-            'Could not load data/visualization_data.json - run the ArccosScraper export first.';
+            'Could not load visualization data from API or local file - run the ArccosScraper export first.';
         console.error(e);
         return;
     }
 
     try {
-        const geometryResp = await fetch('data/course_geometry.json');
-        if (geometryResp.ok) {
-            geometryData = await geometryResp.json();
-        }
+        geometryData = await fetchApiFirstJson('/api/data/geometry', 'data/course_geometry.json');
     } catch {
         geometryData = null;
     }
@@ -119,6 +116,12 @@ async function init() {
             geometryDebugVisible = !geometryDebugVisible;
             setGeometryDebugVisible(geometryDebugVisible);
         }
+        if (e.key.toLowerCase() === 'b') {
+            replayBestHoleForCurrent();
+        }
+        if (e.key.toLowerCase() === 'w') {
+            replayWorstHoleForCurrent();
+        }
     });
 
     onHoleClick(idx => {
@@ -150,11 +153,110 @@ async function init() {
     onBestHoleReplay(() => {
         replayBestHoleForCurrent();
     });
+    onWorstHoleReplay(() => {
+        replayWorstHoleForCurrent();
+    });
+    onSimulateApi(async ({ holes, rounds }) => {
+        await runSimulationApi(holes, rounds);
+    });
     spreadFilters = getSpreadFilters();
     setCinematicMode(true);
 
     clock.last = performance.now();
     requestAnimationFrame(animate);
+}
+
+async function fetchApiFirstJson(apiPath, fallbackPath) {
+    try {
+        const apiResp = await fetch(toApiUrl(apiPath), { cache: 'no-store' });
+        if (apiResp.ok) {
+            return await apiResp.json();
+        }
+    } catch {
+        // Fall back to local static file.
+    }
+
+    const fallbackResp = await fetch(fallbackPath, { cache: 'no-store' });
+    if (!fallbackResp.ok) {
+        throw new Error(`Failed to load ${fallbackPath}: HTTP ${fallbackResp.status}`);
+    }
+    return await fallbackResp.json();
+}
+
+async function runSimulationApi(holes, rounds) {
+    const currentRound = vizData?.rounds?.[currentRoundIdx];
+    const courseName = currentRound?.courseName;
+    if (!courseName) {
+        updateSimApiSummary('Cannot run simulation: no course loaded.');
+        return;
+    }
+
+    updateSimApiSummary('Running simulation API...');
+    try {
+        const resp = await fetch(toApiUrl('/api/simulate'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                courseName,
+                holes: Number(holes),
+                rounds: Number(rounds),
+                verbose: false
+            })
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            updateSimApiSummary(`Simulation API failed (${resp.status}).\n${errText}`);
+            return;
+        }
+
+        const data = await resp.json();
+        updateSimApiSummary(formatSimApiSummary(data));
+    } catch (err) {
+        updateSimApiSummary(`Simulation API error.\n${String(err)}`);
+    }
+}
+
+function resolveApiBase() {
+    const queryBase = new URLSearchParams(window.location.search).get('apiBase');
+    if (queryBase) return trimTrailingSlash(queryBase);
+    if (typeof window !== 'undefined' && typeof window.GOLF_API_BASE === 'string' && window.GOLF_API_BASE.trim()) {
+        return trimTrailingSlash(window.GOLF_API_BASE.trim());
+    }
+    return '';
+}
+
+function toApiUrl(path) {
+    if (!API_BASE) return path;
+    return `${API_BASE}${path}`;
+}
+
+function trimTrailingSlash(value) {
+    return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+function formatSimApiSummary(data) {
+    const rounds = Array.isArray(data?.rounds) ? data.rounds : [];
+    if (rounds.length === 0) {
+        return 'Simulation completed but no rounds returned.';
+    }
+
+    const totals = rounds.map(r => Number(r.totalScore)).filter(Number.isFinite);
+    const best = Math.min(...totals);
+    const worst = Math.max(...totals);
+    const avgScore = totals.reduce((a, b) => a + b, 0) / Math.max(1, totals.length);
+    const sample = rounds.slice(0, 8).map((r, i) => `R${i + 1}: ${r.totalScore}`);
+
+    return [
+        `Course: ${data.courseName ?? '-'}`,
+        `Requested: ${data.roundsRequested ?? rounds.length} rounds, ${data.holesPlayed ?? '-'} holes`,
+        `Avg: ${avgScore.toFixed(1)}`,
+        `Best: ${best}`,
+        `Worst: ${worst}`,
+        `Samples: ${sample.join(' | ')}`,
+        '',
+        `Calibration: penalties/18=${Number(data?.calibration?.averagePenaltiesPerRound ?? 0).toFixed(2)}`
+    ].join('\n');
 }
 
 function loadRound(idx) {
@@ -168,6 +270,14 @@ function loadRound(idx) {
 }
 
 function replayBestHoleForCurrent() {
+    replayExtremeHoleForCurrent('best');
+}
+
+function replayWorstHoleForCurrent() {
+    replayExtremeHoleForCurrent('worst');
+}
+
+function replayExtremeHoleForCurrent(mode) {
     const currentRound = vizData?.rounds?.[currentRoundIdx];
     const hole = currentRound?.holes?.[currentHoleIdx];
     if (!currentRound || !hole) return;
@@ -195,25 +305,35 @@ function replayBestHoleForCurrent() {
     if (candidates.length === 0) return;
 
     candidates.sort((a, b) => {
-        const dScore = a.holeScore - b.holeScore;
-        if (dScore !== 0) return dScore;
+        const scoreCmp = mode === 'worst'
+            ? b.holeScore - a.holeScore
+            : a.holeScore - b.holeScore;
+        if (scoreCmp !== 0) return scoreCmp;
+
         const dToParA = a.holeScore - a.par;
         const dToParB = b.holeScore - b.par;
-        if (dToParA !== dToParB) return dToParA - dToParB;
-        const dTotal = a.totalScore - b.totalScore;
-        if (dTotal !== 0) return dTotal;
+        const toParCmp = mode === 'worst'
+            ? dToParB - dToParA
+            : dToParA - dToParB;
+        if (toParCmp !== 0) return toParCmp;
+
+        const totalCmp = mode === 'worst'
+            ? b.totalScore - a.totalScore
+            : a.totalScore - b.totalScore;
+        if (totalCmp !== 0) return totalCmp;
+
         return b.date.localeCompare(a.date);
     });
 
-    const best = candidates[0];
+    const chosen = candidates[0];
     spreadMode = false;
     setSpreadMode(false);
-    currentRoundIdx = best.roundIdx;
-    currentHoleIdx = best.holeIdx;
-    setRoundSelection(best.roundIdx);
-    const bestRound = vizData.rounds[best.roundIdx];
-    updateCourseInfo(bestRound);
-    buildScorecard(bestRound.holes, currentHoleIdx);
+    currentRoundIdx = chosen.roundIdx;
+    currentHoleIdx = chosen.holeIdx;
+    setRoundSelection(chosen.roundIdx);
+    const chosenRound = vizData.rounds[chosen.roundIdx];
+    updateCourseInfo(chosenRound);
+    buildScorecard(chosenRound.holes, currentHoleIdx);
     loadHole();
 }
 

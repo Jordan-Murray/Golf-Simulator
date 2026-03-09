@@ -20,6 +20,11 @@ export function initUI() {
         spreadRange: document.getElementById('spread-range'),
         spreadHeatmap: document.getElementById('spread-heatmap'),
         btnBestHole: document.getElementById('btn-best-hole'),
+        btnWorstHole: document.getElementById('btn-worst-hole'),
+        simHoles: document.getElementById('sim-holes'),
+        simRounds: document.getElementById('sim-rounds'),
+        btnSimApi: document.getElementById('btn-sim-api'),
+        simApiBody: document.getElementById('sim-api-body'),
         btnPlay: document.getElementById('btn-play'),
         shotTimeline: document.getElementById('shot-timeline'),
         timelineLabel: document.getElementById('timeline-label'),
@@ -131,6 +136,28 @@ export function onSpreadFiltersChange(cb) {
 export function onBestHoleReplay(cb) {
     if (!elements.btnBestHole) return;
     elements.btnBestHole.addEventListener('click', () => cb());
+}
+
+export function onWorstHoleReplay(cb) {
+    if (!elements.btnWorstHole) return;
+    elements.btnWorstHole.addEventListener('click', () => cb());
+}
+
+export function onSimulateApi(cb) {
+    if (!elements.btnSimApi) return;
+    elements.btnSimApi.addEventListener('click', () => {
+        const holes = Number(elements.simHoles?.value ?? 9);
+        const rounds = Number(elements.simRounds?.value ?? 10);
+        cb({
+            holes: Number.isFinite(holes) ? holes : 9,
+            rounds: Number.isFinite(rounds) ? rounds : 10
+        });
+    });
+}
+
+export function updateSimApiSummary(text) {
+    if (!elements.simApiBody) return;
+    elements.simApiBody.textContent = text;
 }
 
 export function updateGeometryDebug(text) {

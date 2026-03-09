@@ -7,6 +7,20 @@ The viewer can render real hole layouts from:
 
 If `course_geometry.json` is missing or a hole is not defined, the viewer falls back to procedural fairway/green.
 
+## API Mode
+
+The viewer now prefers API endpoints when available:
+
+- `/api/data/visualization`
+- `/api/data/geometry`
+- `/api/simulate` (for top-bar sim button)
+
+If API endpoints are unavailable, it falls back to local files under `Visualization/data`.
+
+To point a static deploy (for example Vercel) at a hosted backend:
+
+- append `?apiBase=https://your-golfweb-api.example.com` to the viewer URL.
+
 ## `course_geometry.json` schema
 
 ```json

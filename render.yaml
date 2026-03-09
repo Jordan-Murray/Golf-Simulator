@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: golfweb-api
+    runtime: dotnet
+    rootDir: GolfWeb
+    buildCommand: dotnet publish GolfWeb.csproj -c Release -o out
+    startCommand: dotnet out/GolfWeb.dll
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://0.0.0.0:10000
+      # Set this to your Vercel URL after frontend deploy
+      # - key: Cors__AllowedOrigins__0
+      #   value: https://your-app.vercel.app

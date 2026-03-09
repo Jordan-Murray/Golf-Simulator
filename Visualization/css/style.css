@@ -97,6 +97,45 @@ body {
 #btn-best-hole:hover {
     background: rgba(102, 187, 106, 0.34);
 }
+#btn-worst-hole {
+    padding: 5px 10px;
+    background: rgba(229, 57, 53, 0.2);
+    border: 1px solid rgba(229, 57, 53, 0.6);
+    border-radius: 6px;
+    color: #ffdede;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+#btn-worst-hole:hover {
+    background: rgba(229, 57, 53, 0.34);
+}
+#sim-holes,
+#sim-rounds {
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.82rem;
+}
+#sim-holes option {
+    background: #1a1a2e;
+}
+#sim-rounds {
+    width: 74px;
+}
+#btn-sim-api {
+    padding: 5px 10px;
+    background: rgba(30, 136, 229, 0.24);
+    border: 1px solid rgba(30, 136, 229, 0.65);
+    border-radius: 6px;
+    color: #d8eefe;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+#btn-sim-api:hover {
+    background: rgba(30, 136, 229, 0.4);
+}
 
 /* ---- Hole Info (left panel) ---- */
 #hole-panel {
@@ -179,6 +218,34 @@ body {
     margin: 0;
     white-space: pre-wrap;
     font-size: 0.75rem;
+    line-height: 1.35;
+    color: #d7d7d7;
+}
+
+#sim-api-panel {
+    position: fixed;
+    right: 16px;
+    top: 520px;
+    width: 320px;
+    max-height: 34vh;
+    overflow: auto;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 14px;
+    z-index: 14;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+#sim-api-title {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #d7e9ff;
+    margin-bottom: 6px;
+}
+#sim-api-body {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.74rem;
     line-height: 1.35;
     color: #d7d7d7;
 }

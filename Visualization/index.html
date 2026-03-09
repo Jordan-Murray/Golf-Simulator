@@ -41,6 +41,13 @@
             <span>Heatmap</span>
         </label>
         <button id="btn-best-hole" title="Replay best score on this hole">Replay Best Hole</button>
+        <button id="btn-worst-hole" title="Replay worst score on this hole">Replay Worst Hole</button>
+        <select id="sim-holes" title="Simulation holes">
+            <option value="9" selected>Sim 9</option>
+            <option value="18">Sim 18</option>
+        </select>
+        <input id="sim-rounds" type="number" min="1" max="100" value="10" />
+        <button id="btn-sim-api" title="Run simulation API">Run Sim API</button>
         <select id="round-select"></select>
     </div>
 
@@ -64,6 +71,10 @@
     <div id="geometry-debug">
         <div id="geometry-debug-title">Geometry Debug</div>
         <pre id="geometry-debug-body">Waiting for hole...</pre>
+    </div>
+    <div id="sim-api-panel">
+        <div id="sim-api-title">Simulation API</div>
+        <pre id="sim-api-body">Not run yet.</pre>
     </div>
 
     <div id="controls">
@@ -89,8 +100,8 @@
         <div id="scorecard"></div>
     </div>
 
-    <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug</div>
+    <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst</div>
 
-    <script type="module" src="js/main.js?v=20260309m"></script>
+    <script type="module" src="js/main.js?v=20260309o"></script>
 </body>
 </html>
