@@ -1,7 +1,7 @@
-import { createScene, frameHole, focusCameraForPutt } from './scene.js?v=20260309h';
-import { buildHole } from './course.js?v=20260309h';
-import { buildShots, nextShot, prevShot, togglePlay, goToShot, getCurrentShot, updateAnimation, getShotCount, getPlaybackValue, seekPlayback, setCinematicMode, getBallPositionXZ } from './shots.js?v=20260309h';
-import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, setGeometryDebugVisible } from './ui.js?v=20260309h';
+import { createScene, frameHole, focusCameraForPutt } from './scene.js?v=20260309i';
+import { buildHole } from './course.js?v=20260309m';
+import { buildShots, buildShotSpread, nextShot, prevShot, togglePlay, goToShot, getCurrentShot, updateAnimation, getShotCount, getPlaybackValue, seekPlayback, setCinematicMode, getBallPositionXZ } from './shots.js?v=20260309m';
+import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, onSpreadModeChange, setSpreadMode, setGeometryDebugVisible, updateHoleAnalytics, onSpreadFiltersChange, getSpreadFilters, onBestHoleReplay, setRoundSelection } from './ui.js?v=20260309k';
 
 let vizData = null;
 let geometryData = null;
@@ -12,6 +12,8 @@ let currentHoleGeometry = null;
 let cameraPuttMode = false;
 let cameraUserOverrideUntil = 0;
 let geometryDebugVisible = false;
+let spreadMode = false;
+let spreadFilters = { club: 'all', range: '20', heatmap: true };
 let sceneCtx = null;
 const clock = { last: 0 };
 const FORCE_GEOMETRY_FLIP_180 = false;
@@ -20,6 +22,7 @@ const AUTO_MIRROR_GEOMETRY = false;
 
 async function init() {
     initUI();
+    setSpreadMode(false);
     setGeometryDebugVisible(geometryDebugVisible);
 
     try {
@@ -67,6 +70,7 @@ async function init() {
     document.getElementById('btn-prev-hole').addEventListener('click', () => changeHole(-1));
     document.getElementById('btn-next-hole').addEventListener('click', () => changeHole(1));
     document.getElementById('btn-prev-shot').addEventListener('click', () => {
+        if (spreadMode) return;
         prevShot();
         const shot = getCurrentShot();
         updateShotInfo(shot);
@@ -74,6 +78,7 @@ async function init() {
         setTimelineValue(getPlaybackValue(), shot);
     });
     document.getElementById('btn-next-shot').addEventListener('click', () => {
+        if (spreadMode) return;
         nextShot();
         const shot = getCurrentShot();
         updateShotInfo(shot);
@@ -81,12 +86,14 @@ async function init() {
         setTimelineValue(getPlaybackValue(), shot);
     });
     document.getElementById('btn-play').addEventListener('click', () => {
+        if (spreadMode) return;
         const playing = togglePlay();
         setPlayIcon(playing);
     });
 
     document.addEventListener('keydown', e => {
         if (e.key === 'ArrowRight') {
+            if (spreadMode) return;
             nextShot();
             const shot = getCurrentShot();
             updateShotInfo(shot);
@@ -94,6 +101,7 @@ async function init() {
             setTimelineValue(getPlaybackValue(), shot);
         }
         if (e.key === 'ArrowLeft') {
+            if (spreadMode) return;
             prevShot();
             const shot = getCurrentShot();
             updateShotInfo(shot);
@@ -119,6 +127,7 @@ async function init() {
     });
 
     onTimelineInput(value => {
+        if (spreadMode) return;
         seekPlayback(value);
         const shot = getCurrentShot();
         updateShotInfo(shot);
@@ -130,6 +139,18 @@ async function init() {
     onCinematicModeChange(enabled => {
         setCinematicMode(enabled);
     });
+    onSpreadModeChange(enabled => {
+        spreadMode = enabled;
+        loadHole();
+    });
+    onSpreadFiltersChange(filters => {
+        spreadFilters = filters;
+        if (spreadMode) loadHole();
+    });
+    onBestHoleReplay(() => {
+        replayBestHoleForCurrent();
+    });
+    spreadFilters = getSpreadFilters();
     setCinematicMode(true);
 
     clock.last = performance.now();
@@ -139,23 +160,83 @@ async function init() {
 function loadRound(idx) {
     currentRoundIdx = idx;
     currentHoleIdx = 0;
+    setRoundSelection(idx);
     const round = vizData.rounds[currentRoundIdx];
     updateCourseInfo(round);
     buildScorecard(round.holes, currentHoleIdx);
     loadHole();
 }
 
+function replayBestHoleForCurrent() {
+    const currentRound = vizData?.rounds?.[currentRoundIdx];
+    const hole = currentRound?.holes?.[currentHoleIdx];
+    if (!currentRound || !hole) return;
+
+    const courseName = normalize(currentRound.courseName);
+    const holeNumber = Number(hole.holeNumber);
+    const candidates = [];
+
+    for (let i = 0; i < vizData.rounds.length; i++) {
+        const r = vizData.rounds[i];
+        if (normalize(r.courseName) !== courseName) continue;
+        const holeIdx = (r.holes ?? []).findIndex(h => Number(h.holeNumber) === holeNumber);
+        if (holeIdx < 0) continue;
+        const h = r.holes[holeIdx];
+        candidates.push({
+            roundIdx: i,
+            holeIdx,
+            holeScore: Number(h.score),
+            par: Number(h.par),
+            totalScore: Number(r.totalScore),
+            date: String(r.date ?? '')
+        });
+    }
+
+    if (candidates.length === 0) return;
+
+    candidates.sort((a, b) => {
+        const dScore = a.holeScore - b.holeScore;
+        if (dScore !== 0) return dScore;
+        const dToParA = a.holeScore - a.par;
+        const dToParB = b.holeScore - b.par;
+        if (dToParA !== dToParB) return dToParA - dToParB;
+        const dTotal = a.totalScore - b.totalScore;
+        if (dTotal !== 0) return dTotal;
+        return b.date.localeCompare(a.date);
+    });
+
+    const best = candidates[0];
+    spreadMode = false;
+    setSpreadMode(false);
+    currentRoundIdx = best.roundIdx;
+    currentHoleIdx = best.holeIdx;
+    setRoundSelection(best.roundIdx);
+    const bestRound = vizData.rounds[best.roundIdx];
+    updateCourseInfo(bestRound);
+    buildScorecard(bestRound.holes, currentHoleIdx);
+    loadHole();
+}
+
 function loadHole() {
     const round = vizData.rounds[currentRoundIdx];
-    const hole = round.holes[currentHoleIdx];
-    const geometryStatus = inspectHoleGeometry(round, hole);
-    const aligned = alignHoleGeometryToHole(geometryStatus.holeGeometry, hole);
+    const selectedHole = round.holes[currentHoleIdx];
+    const geometryStatus = inspectHoleGeometry(round, selectedHole);
+    const rawSpreadSamples = spreadMode
+        ? getHoleSamples(round, selectedHole.holeNumber, spreadFilters)
+        : [];
+    const spreadSamples = spreadMode
+        ? normalizeSamplesToReference(rawSpreadSamples, selectedHole)
+        : [];
+    const referenceHole = spreadMode
+        ? buildAggregateHoleForFrame(selectedHole, spreadSamples)
+        : selectedHole;
+    const aligned = alignHoleGeometryToHole(geometryStatus.holeGeometry, referenceHole);
     const holeGeometry = aligned.geometry;
-    const holeForRender = getHoleForRender(hole, holeGeometry);
+    const holeForRender = getHoleForRender(referenceHole, holeGeometry);
     currentHoleForRender = holeForRender;
     currentHoleGeometry = holeGeometry;
     cameraPuttMode = false;
-    aligned.holePin = hole?.pin ? [Number(hole.pin.x), Number(hole.pin.z)] : null;
+    aligned.holePin = selectedHole?.pin ? [Number(selectedHole.pin.x), Number(selectedHole.pin.z)] : null;
     const greenCenter = centroid(holeGeometry?.green);
     aligned.renderPin = holeForRender?.pin ? [Number(holeForRender.pin.x), Number(holeForRender.pin.z)] : null;
     aligned.greenCenter = greenCenter;
@@ -165,17 +246,181 @@ function loadHole() {
 
     clearDynamicSceneGroups(sceneCtx.scene);
     buildHole(sceneCtx.scene, holeForRender, holeGeometry);
-    buildShots(sceneCtx.scene, hole);
-    setTimelineBounds(getShotCount());
+    if (spreadMode) {
+        buildShotSpread(sceneCtx.scene, spreadSamples, spreadFilters);
+        setTimelineBounds(0);
+        setTimelineValue(0, null);
+        setPlayIcon(false);
+        frameHole(sceneCtx.camera, sceneCtx.controls, holeForRender, holeGeometry);
+        updateHoleAnalytics(formatHoleAnalytics(selectedHole, spreadSamples, holeGeometry));
+        updateShotInfo(null);
+    } else {
+        buildShots(sceneCtx.scene, selectedHole);
+        setTimelineBounds(getShotCount());
+        frameHole(sceneCtx.camera, sceneCtx.controls, getHoleForRender(selectedHole, holeGeometry), holeGeometry);
+        updateHoleAnalytics('Spread mode off');
+        updateShotInfo(null);
+    }
     const sceneDiag = inspectSceneGroups(sceneCtx.scene);
-    frameHole(sceneCtx.camera, sceneCtx.controls, holeForRender, holeGeometry);
-    updateHoleInfo(hole);
-    updateShotInfo(null);
+    updateHoleInfo(selectedHole);
     buildScorecard(round.holes, currentHoleIdx);
     goToShot(-1);
     setPlayIcon(false);
     setTimelineValue(0, null);
     updateGeometryDebug(formatGeometryDebug(geometryStatus, aligned, sceneDiag));
+}
+
+function normalizeSamplesToReference(samples, referenceHole) {
+    if (!Array.isArray(samples) || samples.length === 0) return [];
+    const normalized = [];
+    for (const hole of samples) {
+        normalized.push(normalizeHoleToReference(hole, referenceHole));
+    }
+    return normalized;
+}
+
+function normalizeHoleToReference(hole, referenceHole) {
+    const refTee = getHoleTee(referenceHole);
+    const refPin = getHolePin(referenceHole);
+    const srcTee = getHoleTee(hole);
+    const srcPin = getHolePin(hole);
+
+    if (!refTee || !refPin || !srcTee || !srcPin) {
+        return hole;
+    }
+
+    const noMirror = buildSimilarityTransform(srcTee, srcPin, refTee, refPin, false);
+    const withMirror = buildSimilarityTransform(srcTee, srcPin, refTee, refPin, true);
+
+    const firstTeeEnd = getFirstTeeEnd(hole);
+    let chosen = noMirror;
+    if (firstTeeEnd) {
+        const direct = transformPointSimilarity(firstTeeEnd, noMirror);
+        const mirrored = transformPointSimilarity(firstTeeEnd, withMirror);
+        const scoreDirect = scoreTeeShotFit(direct, refTee, refPin);
+        const scoreMirrored = scoreTeeShotFit(mirrored, refTee, refPin);
+        chosen = scoreMirrored + 1e-6 < scoreDirect ? withMirror : noMirror;
+    }
+
+    const mappedShots = (hole.shots ?? []).map(shot => {
+        const start = transformPointSimilarity([Number(shot.start?.x), Number(shot.start?.z)], chosen);
+        const end = transformPointSimilarity([Number(shot.end?.x), Number(shot.end?.z)], chosen);
+        return {
+            ...shot,
+            start: {
+                ...shot.start,
+                x: round2(start[0]),
+                z: round2(start[1])
+            },
+            end: {
+                ...shot.end,
+                x: round2(end[0]),
+                z: round2(end[1])
+            }
+        };
+    });
+
+    const mappedPin = transformPointSimilarity(srcPin, chosen);
+    return {
+        ...hole,
+        pin: {
+            ...hole.pin,
+            x: round2(mappedPin[0]),
+            z: round2(mappedPin[1])
+        },
+        shots: mappedShots,
+        _normalized: true,
+        _normalizedMirrored: chosen.mirrored
+    };
+}
+
+function getHoleTee(hole) {
+    const first = (hole?.shots ?? [])[0];
+    if (!first) return null;
+    const x = Number(first.start?.x);
+    const z = Number(first.start?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    return [x, z];
+}
+
+function getHolePin(hole) {
+    const x = Number(hole?.pin?.x);
+    const z = Number(hole?.pin?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    return [x, z];
+}
+
+function getFirstTeeEnd(hole) {
+    const tee = (hole?.shots ?? []).find(s => Number(s.shotNumber) === 1);
+    if (!tee) return null;
+    const x = Number(tee.end?.x);
+    const z = Number(tee.end?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    return [x, z];
+}
+
+function buildSimilarityTransform(srcTee, srcPin, dstTee, dstPin, mirrored = false) {
+    const srcVec = [srcPin[0] - srcTee[0], srcPin[1] - srcTee[1]];
+    const dstVec = [dstPin[0] - dstTee[0], dstPin[1] - dstTee[1]];
+    const srcLen = Math.hypot(srcVec[0], srcVec[1]);
+    const dstLen = Math.hypot(dstVec[0], dstVec[1]);
+    if (srcLen < 1e-6 || dstLen < 1e-6) {
+        return { srcTee, dstTee, scale: 1, cos: 1, sin: 0, mirrored, srcUnit: [1, 0] };
+    }
+
+    const srcUnit = [srcVec[0] / srcLen, srcVec[1] / srcLen];
+    const dstUnit = [dstVec[0] / dstLen, dstVec[1] / dstLen];
+    const cos = srcUnit[0] * dstUnit[0] + srcUnit[1] * dstUnit[1];
+    const sin = srcUnit[0] * dstUnit[1] - srcUnit[1] * dstUnit[0];
+
+    return {
+        srcTee,
+        dstTee,
+        scale: dstLen / srcLen,
+        cos,
+        sin,
+        mirrored,
+        srcUnit
+    };
+}
+
+function transformPointSimilarity(point, t) {
+    let x = Number(point[0]) - t.srcTee[0];
+    let z = Number(point[1]) - t.srcTee[1];
+
+    if (t.mirrored) {
+        const ux = t.srcUnit[0];
+        const uz = t.srcUnit[1];
+        const lx = -uz;
+        const lz = ux;
+        const along = x * ux + z * uz;
+        let lateral = x * lx + z * lz;
+        lateral = -lateral;
+        x = along * ux + lateral * lx;
+        z = along * uz + lateral * lz;
+    }
+
+    const xr = (x * t.cos - z * t.sin) * t.scale + t.dstTee[0];
+    const zr = (x * t.sin + z * t.cos) * t.scale + t.dstTee[1];
+    return [xr, zr];
+}
+
+function scoreTeeShotFit(endPoint, teePoint, pinPoint) {
+    const vx = pinPoint[0] - teePoint[0];
+    const vz = pinPoint[1] - teePoint[1];
+    const len = Math.hypot(vx, vz);
+    if (len < 1e-6) return Number.POSITIVE_INFINITY;
+    const ux = vx / len;
+    const uz = vz / len;
+    const lx = -uz;
+    const lz = ux;
+
+    const rx = endPoint[0] - teePoint[0];
+    const rz = endPoint[1] - teePoint[1];
+    const along = rx * ux + rz * uz;
+    const lateral = rx * lx + rz * lz;
+    const alongPenalty = along < 0 ? Math.abs(along) * 3 : Math.max(0, along - len * 1.4);
+    return Math.abs(lateral) + alongPenalty;
 }
 
 function changeHole(delta) {
@@ -193,13 +438,15 @@ function animate(now) {
     const delta = (now - clock.last) / 1000;
     clock.last = now;
 
-    const animating = updateAnimation(delta);
-    const activeShot = getCurrentShot();
-    if (animating) {
-        updateShotInfo(activeShot);
+    if (!spreadMode) {
+        const animating = updateAnimation(delta);
+        const activeShot = getCurrentShot();
+        if (animating) {
+            updateShotInfo(activeShot);
+        }
+        syncShotCamera(delta, activeShot);
+        setTimelineValue(getPlaybackValue(), activeShot);
     }
-    syncShotCamera(delta, activeShot);
-    setTimelineValue(getPlaybackValue(), activeShot);
 
     sceneCtx.controls.update();
     sceneCtx.renderer.render(sceneCtx.scene, sceneCtx.camera);
@@ -208,6 +455,7 @@ function animate(now) {
 init();
 
 function syncShotCamera(deltaTime, shot = null) {
+    if (spreadMode) return;
     if (!sceneCtx || !currentHoleForRender) return;
 
     const activeShot = shot ?? getCurrentShot();
@@ -232,6 +480,178 @@ function syncShotCamera(deltaTime, shot = null) {
         frameHole(sceneCtx.camera, sceneCtx.controls, currentHoleForRender, currentHoleGeometry);
         cameraPuttMode = false;
     }
+}
+
+function getHoleSamples(round, holeNumber, filters = { range: '20' }) {
+    const courseName = normalize(round.courseName);
+    let samples = (vizData.rounds ?? [])
+        .filter(r => normalize(r.courseName) === courseName)
+        .map(r => {
+            const h = (r.holes ?? []).find(x => Number(x.holeNumber) === Number(holeNumber));
+            return h ? { ...h, _roundDate: r.date } : null;
+        })
+        .filter(h => !!h)
+        .sort((a, b) => String(b._roundDate).localeCompare(String(a._roundDate)));
+    const rangeN = String(filters?.range ?? '20');
+    if (rangeN !== 'all') {
+        const n = Number(rangeN);
+        if (Number.isFinite(n) && n > 0) {
+            samples = samples.slice(0, n);
+        }
+    }
+    return samples;
+}
+
+function buildAggregateHoleForFrame(baseHole, samples) {
+    const pin = averagePin(samples) ?? baseHole.pin;
+    const shots = [];
+    for (const h of samples) {
+        for (const s of h.shots ?? []) {
+            shots.push(s);
+        }
+    }
+    return {
+        ...baseHole,
+        pin,
+        shots
+    };
+}
+
+function averagePin(samples) {
+    if (!samples || samples.length === 0) return null;
+    let sx = 0;
+    let sz = 0;
+    let n = 0;
+    for (const h of samples) {
+        const x = Number(h?.pin?.x);
+        const z = Number(h?.pin?.z);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+        sx += x;
+        sz += z;
+        n++;
+    }
+    if (n === 0) return null;
+    return { x: sx / n, z: sz / n };
+}
+
+function formatHoleAnalytics(currentHole, samples, alignedGeometry = null) {
+    if (!samples || samples.length === 0) {
+        return 'No samples found for this hole.';
+    }
+
+    const rounds = samples.length;
+    const avgScore = avg(samples.map(h => Number(h.score)));
+    const puttsPerHole = samples.map(h => (h.shots ?? []).filter(s => Number(s.clubId) === 13).length);
+    const penaltiesPerHole = samples.map(h => countPenalties(h.shots ?? []));
+    const firstPuttDists = samples
+        .map(h => (h.shots ?? []).find(s => Number(s.clubId) === 13))
+        .filter(s => !!s)
+        .map(s => Number(s.distance));
+    const girCount = samples.filter(h => isGir(h)).length;
+    const threePuttCount = puttsPerHole.filter(p => p >= 3).length;
+    const fir = computeFir(samples, alignedGeometry);
+    const lateral = lateralBias(samples);
+    const dateSpan = buildDateSpan(samples);
+    const normalizedCount = samples.filter(s => s._normalized).length;
+    const mirroredCount = samples.filter(s => s._normalizedMirrored).length;
+
+    return [
+        `Rounds sampled: ${rounds}`,
+        `Window: ${dateSpan}`,
+        `Coords normalized: ${normalizedCount}/${rounds} (mirrored ${mirroredCount})`,
+        `Avg score: ${avgScore.toFixed(2)} (par ${currentHole.par})`,
+        `Avg putts/hole: ${avg(puttsPerHole).toFixed(2)}`,
+        `Avg penalties/hole: ${avg(penaltiesPerHole).toFixed(2)}`,
+        `GIR: ${(girCount / rounds * 100).toFixed(1)}%`,
+        fir,
+        `3-putt rate: ${(threePuttCount / rounds * 100).toFixed(1)}%`,
+        `Avg first putt: ${firstPuttDists.length ? avg(firstPuttDists).toFixed(1) : '-'} yds`,
+        `Tee miss bias: ${lateral}`
+    ].join('\n');
+}
+
+function buildDateSpan(samples) {
+    const dates = samples.map(s => String(s._roundDate ?? '')).filter(Boolean).sort();
+    if (dates.length === 0) return '-';
+    return dates.length === 1 ? dates[0] : `${dates[0]} -> ${dates[dates.length - 1]}`;
+}
+
+function computeFir(samples, alignedGeometry) {
+    const fairway = alignedGeometry?.fairway;
+    if (!Array.isArray(fairway) || fairway.length < 3) {
+        return 'FIR (geom): n/a (no fairway polygon)';
+    }
+    const eligible = samples.filter(h => Number(h.par) >= 4);
+    if (eligible.length === 0) return 'FIR (geom): n/a';
+
+    let hits = 0;
+    let total = 0;
+    for (const h of eligible) {
+        const teeShot = (h.shots ?? []).find(s => Number(s.shotNumber) === 1);
+        if (!teeShot) continue;
+        const p = [Number(teeShot.end?.x), Number(teeShot.end?.z)];
+        if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+        total++;
+        if (pointInPolygon2D(p, fairway)) hits++;
+    }
+    if (total === 0) return 'FIR (geom): n/a';
+    return `FIR (geom): ${hits}/${total} (${(hits / total * 100).toFixed(1)}%)`;
+}
+
+function lateralBias(samples) {
+    const vals = [];
+    for (const h of samples) {
+        const tee = (h.shots ?? []).find(s => Number(s.shotNumber) === 1);
+        const sx = Number(tee?.start?.x);
+        const sz = Number(tee?.start?.z);
+        const ex = Number(tee?.end?.x);
+        const ez = Number(tee?.end?.z);
+        const px = Number(h?.pin?.x);
+        const pz = Number(h?.pin?.z);
+        if (![sx, sz, ex, ez, px, pz].every(Number.isFinite)) continue;
+
+        const vx = px - sx;
+        const vz = pz - sz;
+        const len = Math.hypot(vx, vz);
+        if (len < 1e-6) continue;
+        const ux = vx / len;
+        const uz = vz / len;
+        const lx = -uz;
+        const lz = ux;
+        const rx = ex - sx;
+        const rz = ez - sz;
+        const lateral = rx * lx + rz * lz;
+        vals.push(lateral);
+    }
+    if (vals.length === 0) return 'n/a';
+    const mean = avg(vals);
+    const side = mean > 0 ? 'right' : 'left';
+    return `${Math.abs(mean).toFixed(1)}m ${side} (avg lateral)`;
+}
+
+function countPenalties(shots) {
+    let count = 0;
+    for (const s of shots) {
+        const name = normalize(s.clubName);
+        if (name.includes('penalty') || Number(s.clubId) === 99) {
+            count++;
+        }
+    }
+    return count;
+}
+
+function isGir(hole) {
+    const par = Number(hole.par);
+    const firstPuttIdx = (hole.shots ?? []).findIndex(s => Number(s.clubId) === 13);
+    if (firstPuttIdx < 0) return false;
+    const strokesToGreen = firstPuttIdx;
+    return strokesToGreen <= Math.max(1, par - 2);
+}
+
+function avg(values) {
+    const valid = values.filter(v => Number.isFinite(v));
+    if (valid.length === 0) return 0;
+    return valid.reduce((a, b) => a + b, 0) / valid.length;
 }
 
 function normalize(value) {

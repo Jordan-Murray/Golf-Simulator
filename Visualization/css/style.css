@@ -41,6 +41,63 @@ body {
 }
 #round-select option { background: #1a1a2e; }
 
+#spread-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #d6f5d6;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+#spread-mode {
+    accent-color: #66bb6a;
+    cursor: pointer;
+}
+#heatmap-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #d6f5d6;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+#spread-heatmap {
+    accent-color: #66bb6a;
+    cursor: pointer;
+}
+#spread-club,
+#spread-range {
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+#spread-club option,
+#spread-range option {
+    background: #1a1a2e;
+}
+#btn-best-hole {
+    padding: 5px 10px;
+    background: rgba(102, 187, 106, 0.2);
+    border: 1px solid rgba(102, 187, 106, 0.6);
+    border-radius: 6px;
+    color: #d8f8da;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+#btn-best-hole:hover {
+    background: rgba(102, 187, 106, 0.34);
+}
+
 /* ---- Hole Info (left panel) ---- */
 #hole-panel {
     position: fixed; left: 16px; top: 70px;
@@ -54,6 +111,32 @@ body {
 #hole-title { font-size: 1.5rem; font-weight: 700; }
 #hole-par { font-size: 0.9rem; color: #aaa; margin-bottom: 6px; }
 #hole-score { font-size: 1.1rem; font-weight: 600; }
+
+#hole-analytics {
+    position: fixed;
+    left: 16px;
+    top: 206px;
+    width: 280px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 14px;
+    z-index: 10;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+#hole-analytics-title {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #d7f5d7;
+    margin-bottom: 6px;
+}
+#hole-analytics-body {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    color: #d7d7d7;
+}
 
 /* ---- Shot Info (right panel) ---- */
 #shot-panel {

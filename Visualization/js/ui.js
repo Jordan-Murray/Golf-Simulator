@@ -7,6 +7,7 @@ export function initUI() {
         holeTitle: document.getElementById('hole-title'),
         holePar: document.getElementById('hole-par'),
         holeScore: document.getElementById('hole-score'),
+        holeAnalyticsBody: document.getElementById('hole-analytics-body'),
         shotClub: document.getElementById('shot-club'),
         shotDist: document.getElementById('shot-dist'),
         shotNum: document.getElementById('shot-num'),
@@ -14,6 +15,11 @@ export function initUI() {
         geometryDebugBody: document.getElementById('geometry-debug-body'),
         scorecard: document.getElementById('scorecard'),
         roundSelect: document.getElementById('round-select'),
+        spreadMode: document.getElementById('spread-mode'),
+        spreadClub: document.getElementById('spread-club'),
+        spreadRange: document.getElementById('spread-range'),
+        spreadHeatmap: document.getElementById('spread-heatmap'),
+        btnBestHole: document.getElementById('btn-best-hole'),
         btnPlay: document.getElementById('btn-play'),
         shotTimeline: document.getElementById('shot-timeline'),
         timelineLabel: document.getElementById('timeline-label'),
@@ -29,6 +35,11 @@ export function populateRoundSelector(rounds) {
         opt.textContent = `${round.courseName} - ${round.date} (${round.totalScore})`;
         elements.roundSelect.appendChild(opt);
     });
+}
+
+export function setRoundSelection(idx) {
+    if (!elements.roundSelect) return;
+    elements.roundSelect.value = String(idx);
 }
 
 export function updateHoleInfo(hole) {
@@ -90,6 +101,38 @@ export function setPlayIcon(playing) {
     elements.btnPlay.textContent = playing ? 'Pause' : 'Play';
 }
 
+export function setSpreadMode(enabled) {
+    if (!elements.spreadMode) return;
+    elements.spreadMode.checked = !!enabled;
+}
+
+export function onSpreadModeChange(cb) {
+    if (!elements.spreadMode) return;
+    elements.spreadMode.addEventListener('change', e => {
+        cb(!!e.target.checked);
+    });
+}
+
+export function getSpreadFilters() {
+    return {
+        club: elements.spreadClub?.value ?? 'all',
+        range: elements.spreadRange?.value ?? '20',
+        heatmap: !!elements.spreadHeatmap?.checked
+    };
+}
+
+export function onSpreadFiltersChange(cb) {
+    const emit = () => cb(getSpreadFilters());
+    if (elements.spreadClub) elements.spreadClub.addEventListener('change', emit);
+    if (elements.spreadRange) elements.spreadRange.addEventListener('change', emit);
+    if (elements.spreadHeatmap) elements.spreadHeatmap.addEventListener('change', emit);
+}
+
+export function onBestHoleReplay(cb) {
+    if (!elements.btnBestHole) return;
+    elements.btnBestHole.addEventListener('click', () => cb());
+}
+
 export function updateGeometryDebug(text) {
     if (!elements.geometryDebugBody) return;
     elements.geometryDebugBody.textContent = text;
@@ -136,6 +179,11 @@ export function onCinematicModeChange(cb) {
     elements.cinematicMode.addEventListener('change', e => {
         cb(!!e.target.checked);
     });
+}
+
+export function updateHoleAnalytics(text) {
+    if (!elements.holeAnalyticsBody) return;
+    elements.holeAnalyticsBody.textContent = text;
 }
 
 function scoreName(diff) {

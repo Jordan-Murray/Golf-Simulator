@@ -11,6 +11,7 @@ let isPlaying = false;
 let animSpeed = 1.5; // seconds per shot
 let cinematicMode = false;
 let revealDelayRemaining = 0;
+let finalPuttIdx = -1;
 
 const BALL_RADIUS = 0.2;
 const ARC_SEGMENTS = 64;
@@ -26,6 +27,7 @@ export function buildShots(scene, holeData) {
     animProgress = 0;
     isPlaying = false;
     revealDelayRemaining = 0;
+    finalPuttIdx = -1;
 
     // Ball
     const ballGeom = new THREE.SphereGeometry(BALL_RADIUS, 16, 16);
@@ -46,6 +48,8 @@ export function buildShots(scene, holeData) {
 
     let prevEnd = null;
 
+    finalPuttIdx = findFinalPuttIndex(holeData.shots ?? []);
+
     // Build curves for each shot
     holeData.shots.forEach((shot, idx) => {
         let start = new THREE.Vector3(shot.start.x, shot.start.y + BALL_RADIUS, shot.start.z);
@@ -60,6 +64,11 @@ export function buildShots(scene, holeData) {
             const puttY = Math.max(start.y, BALL_RADIUS + 0.06);
             start.y = puttY;
             end.y = puttY;
+            // Make the final putt finish at the cup so the replay always shows a satisfying hole-out.
+            if (idx === finalPuttIdx && holeData?.pin) {
+                end.x = Number(holeData.pin.x);
+                end.z = Number(holeData.pin.z);
+            }
         }
 
         const dx = end.x - start.x;
@@ -86,6 +95,112 @@ export function buildShots(scene, holeData) {
     });
 
     scene.add(shotGroup);
+}
+
+export function buildShotSpread(scene, holes, options = {}) {
+    removeTaggedGroups(scene, SHOT_GROUP_TAG);
+
+    shotGroup = new THREE.Group();
+    shotGroup.userData.tag = SHOT_GROUP_TAG;
+    shotCurves = [];
+    currentShotIdx = -1;
+    animProgress = 0;
+    isPlaying = false;
+    revealDelayRemaining = 0;
+    ballMesh = null;
+    ballGroundMarker = null;
+    finalPuttIdx = -1;
+
+    const spreadShots = [];
+    for (const hole of holes ?? []) {
+        for (const shot of hole.shots ?? []) {
+            if (!includeSpreadShot(shot, options)) continue;
+            const start = new THREE.Vector3(Number(shot.start?.x ?? 0), 0.15, Number(shot.start?.z ?? 0));
+            const end = new THREE.Vector3(Number(shot.end?.x ?? 0), 0.15, Number(shot.end?.z ?? 0));
+            addSpreadLine(start, end, shot.clubId);
+            spreadShots.push({ start, end, clubId: shot.clubId });
+        }
+    }
+    if (options.heatmap) {
+        buildSpreadHeatmap(spreadShots);
+    }
+
+    scene.add(shotGroup);
+}
+
+function includeSpreadShot(shot, options) {
+    const clubFilter = String(options.club ?? 'all');
+    if (clubFilter === 'tee') {
+        return Number(shot.shotNumber) === 1;
+    }
+    if (clubFilter !== 'all') {
+        return Number(shot.clubId) === Number(clubFilter);
+    }
+    return true;
+}
+
+function addSpreadLine(start, end, clubId) {
+    const geom = new THREE.BufferGeometry().setFromPoints([start, end]);
+    const mat = new THREE.LineBasicMaterial({
+        color: getClubColor(clubId),
+        transparent: true,
+        opacity: 0.25
+    });
+    const line = new THREE.Line(geom, mat);
+    shotGroup.add(line);
+
+    const markerGeom = new THREE.CircleGeometry(0.45, 12);
+    const markerMat = new THREE.MeshBasicMaterial({
+        color: getClubColor(clubId),
+        transparent: true,
+        opacity: 0.35
+    });
+    const marker = new THREE.Mesh(markerGeom, markerMat);
+    marker.rotation.x = -Math.PI / 2;
+    marker.position.set(end.x, 0.08, end.z);
+    shotGroup.add(marker);
+}
+
+function buildSpreadHeatmap(spreadShots) {
+    if (!spreadShots || spreadShots.length === 0) return;
+    const cellSize = 9;
+    const counts = new Map();
+
+    for (const s of spreadShots) {
+        const x = s.end.x;
+        const z = s.end.z;
+        const gx = Math.round(x / cellSize);
+        const gz = Math.round(z / cellSize);
+        const key = `${gx},${gz}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    const max = Math.max(...counts.values(), 1);
+    for (const [key, count] of counts.entries()) {
+        const [gx, gz] = key.split(',').map(Number);
+        const x = gx * cellSize;
+        const z = gz * cellSize;
+        const t = count / max;
+        const radius = 2.4 + t * 6.4;
+        const color = heatColor(t);
+
+        const geom = new THREE.CircleGeometry(radius, 24);
+        const mat = new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.12 + t * 0.2
+        });
+        const blob = new THREE.Mesh(geom, mat);
+        blob.rotation.x = -Math.PI / 2;
+        blob.position.set(x, 0.07, z);
+        shotGroup.add(blob);
+    }
+}
+
+function heatColor(t) {
+    const hot = new THREE.Color(0xff3d00);
+    const cold = new THREE.Color(0x29b6f6);
+    return cold.lerp(hot, Math.max(0, Math.min(1, t)));
 }
 
 function removeTaggedGroups(scene, tag) {
@@ -172,8 +287,16 @@ function renderPlaybackState() {
     const t = Math.max(0, Math.min(1, animProgress));
     showShotsUpTo(safeIdx - 1);
     drawCurveSegment(shotCurves[safeIdx], t);
-    ballMesh.position.copy(shotCurves[safeIdx].curve.getPoint(t));
+    const ballPos = shotCurves[safeIdx].curve.getPoint(t);
+    // Tiny sink animation on the final putt so the ball visibly drops into the cup.
+    if (safeIdx === finalPuttIdx && t > 0.92) {
+        const sinkT = Math.min(1, (t - 0.92) / 0.08);
+        ballPos.y -= sinkT * (BALL_RADIUS * 1.35);
+    }
+    ballMesh.position.copy(ballPos);
     if (ballGroundMarker) {
+        const hideMarker = safeIdx === finalPuttIdx && t > 0.92;
+        ballGroundMarker.visible = !hideMarker;
         ballGroundMarker.position.set(ballMesh.position.x, 0.05, ballMesh.position.z);
     }
 }
@@ -276,6 +399,14 @@ export function setCinematicMode(enabled) {
 export function getBallPositionXZ() {
     if (!ballMesh) return null;
     return { x: Number(ballMesh.position.x), z: Number(ballMesh.position.z) };
+}
+
+function findFinalPuttIndex(shots) {
+    if (!Array.isArray(shots) || shots.length === 0) return -1;
+    for (let i = shots.length - 1; i >= 0; i--) {
+        if (Number(shots[i]?.clubId) === 13) return i;
+    }
+    return -1;
 }
 
 function currentShotDuration() {

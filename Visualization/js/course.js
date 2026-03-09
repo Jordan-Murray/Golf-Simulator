@@ -205,6 +205,28 @@ function buildTeeBox(tee, angle, teePolygon = null) {
 }
 
 function buildPin(pin) {
+    const lip = new THREE.Mesh(
+        new THREE.RingGeometry(0.15, 0.24, 24),
+        new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.35,
+            metalness: 0.05,
+            side: THREE.DoubleSide
+        })
+    );
+    lip.rotation.x = -Math.PI / 2;
+    lip.position.set(pin.x, 0.046, pin.y);
+    courseGroup.add(lip);
+
+    const cup = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, 0.16, 24),
+        new THREE.MeshStandardMaterial({ color: 0x0b0b0b, roughness: 1.0, metalness: 0.0 })
+    );
+    cup.position.set(pin.x, -0.035, pin.y);
+    cup.castShadow = false;
+    cup.receiveShadow = true;
+    courseGroup.add(cup);
+
     const pole = new THREE.Mesh(
         new THREE.CylinderGeometry(0.05, 0.05, 3, 8),
         new THREE.MeshStandardMaterial({ color: COLORS.pin })
@@ -226,23 +248,6 @@ function buildPin(pin) {
     flag.position.set(pin.x + 0.05, 2.8, pin.y);
     flag.castShadow = true;
     courseGroup.add(flag);
-
-    const cup = new THREE.Mesh(
-        new THREE.RingGeometry(0.05, 0.12, 16),
-        new THREE.MeshStandardMaterial({ color: 0x222222, side: THREE.DoubleSide })
-    );
-    cup.rotation.x = -Math.PI / 2;
-    cup.position.set(pin.x, 0.03, pin.y);
-    courseGroup.add(cup);
-
-    const holeCore = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.045, 0.045, 0.08, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 1.0, metalness: 0.0 })
-    );
-    holeCore.position.set(pin.x, 0.0, pin.y);
-    holeCore.castShadow = false;
-    holeCore.receiveShadow = true;
-    courseGroup.add(holeCore);
 }
 
 function buildTrees(bounds, holeGeometry) {

@@ -5,7 +5,7 @@
       "holes": [
         {
           "holeNumber": 1,
-          "forceMirrored": true,
+          "forceMirrored": false,
           "tee": [
             [
               -29.76,

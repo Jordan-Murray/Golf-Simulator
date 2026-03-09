@@ -21,6 +21,26 @@
     <div id="top-bar">
         <span id="course-name">-</span>
         <span id="round-info">-</span>
+        <label id="spread-toggle">
+            <input id="spread-mode" type="checkbox" />
+            <span>Spread Mode</span>
+        </label>
+        <select id="spread-club">
+            <option value="all">All Clubs</option>
+            <option value="tee">Tee Shots</option>
+            <option value="13">Putter</option>
+        </select>
+        <select id="spread-range">
+            <option value="all">All Rounds</option>
+            <option value="50">Last 50</option>
+            <option value="20" selected>Last 20</option>
+            <option value="10">Last 10</option>
+        </select>
+        <label id="heatmap-toggle">
+            <input id="spread-heatmap" type="checkbox" checked />
+            <span>Heatmap</span>
+        </label>
+        <button id="btn-best-hole" title="Replay best score on this hole">Replay Best Hole</button>
         <select id="round-select"></select>
     </div>
 
@@ -28,6 +48,11 @@
         <div id="hole-title">Hole 1</div>
         <div id="hole-par">Par 4</div>
         <div id="hole-score">-</div>
+    </div>
+
+    <div id="hole-analytics">
+        <div id="hole-analytics-title">Hole Analytics</div>
+        <pre id="hole-analytics-body">Spread mode off</pre>
     </div>
 
     <div id="shot-panel">
@@ -66,6 +91,6 @@
 
     <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug</div>
 
-    <script type="module" src="js/main.js?v=20260309h"></script>
+    <script type="module" src="js/main.js?v=20260309m"></script>
 </body>
 </html>
