@@ -82,9 +82,9 @@ function tryBuildGeometryHole(holeGeometry) {
     if (!holeGeometry) return false;
 
     let hasAny = false;
-    if (isPolygon(holeGeometry.fairway)) {
-        createGroundPolygon(holeGeometry.fairway, COLORS.fairway, 0.0);
-        addPolygonOutline(holeGeometry.fairway, 0x0f5f2f, 0.06);
+    for (const fairway of asPolygonArrayFlexible(holeGeometry.fairway)) {
+        createGroundPolygon(fairway, COLORS.fairway, 0.0);
+        addPolygonOutline(fairway, 0x0f5f2f, 0.06);
         hasAny = true;
     }
     if (isPolygon(holeGeometry.green)) {
@@ -334,7 +334,9 @@ function getGeometryPoints(holeGeometry) {
     const points = [];
 
     for (const p of asPointArray(holeGeometry.tee)) points.push(p);
-    for (const p of asPointArray(holeGeometry.fairway)) points.push(p);
+    for (const poly of asPolygonArrayFlexible(holeGeometry.fairway)) {
+        for (const p of poly) points.push(p);
+    }
     for (const p of asPointArray(holeGeometry.green)) points.push(p);
     for (const poly of asPolygonArray(holeGeometry.bunkers)) {
         for (const p of poly) points.push(p);
@@ -361,6 +363,16 @@ function asPolygonArray(polygons) {
         .filter(poly => poly.length >= 3);
 }
 
+function asPolygonArrayFlexible(value) {
+    if (!Array.isArray(value) || value.length === 0) return [];
+    const pointLike = normalizePoint(value[0]);
+    if (pointLike) {
+        const poly = asPointArray(value);
+        return poly.length >= 3 ? [poly] : [];
+    }
+    return asPolygonArray(value);
+}
+
 function isPolygon(points) {
     return asPointArray(points).length >= 3;
 }
@@ -368,10 +380,16 @@ function isPolygon(points) {
 function normalizePoint(p) {
     if (!p) return null;
     if (Array.isArray(p) && p.length >= 2) {
-        return { x: Number(p[0]), z: Number(p[1]) };
+        const x = Number(p[0]);
+        const z = Number(p[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+        return { x, z };
     }
-    if (typeof p === 'object' && Number.isFinite(p.x) && Number.isFinite(p.z)) {
-        return { x: Number(p.x), z: Number(p.z) };
+    if (typeof p === 'object') {
+        const x = Number(p.x);
+        const z = Number(p.z);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+        return { x, z };
     }
     return null;
 }

@@ -33,8 +33,12 @@ To point a static deploy (for example Vercel) at a hosted backend:
           "holeNumber": 1,
           "forceMirrored": false,
           "forceFlip180": false,
+          "forceMirrorShots": false,
           "tee": [[x, z], [x, z], [x, z]],
-          "fairway": [[x, z], [x, z], [x, z]],
+          "fairway": [
+            [[x, z], [x, z], [x, z]],
+            [[x, z], [x, z], [x, z]]
+          ],
           "green": [[x, z], [x, z], [x, z]],
           "bunkers": [
             [[x, z], [x, z], [x, z]]
@@ -59,7 +63,8 @@ Notes:
 - Optional per-hole overrides:
   - `forceMirrored`: `true|false` to force mirror mode
   - `forceFlip180`: `true|false` to force 180-degree rotation
-  - By default, auto-mirroring is disabled in the viewer. Left/right mirroring only applies when `forceMirrored` is set.
+  - `forceMirrorShots`: `true|false` to mirror shot tracks about tee->pin axis (use only when geometry orientation is correct but shots appear laterally inverted)
+  - If unset, the viewer auto-evaluates both mirrored/non-mirrored and selects best fit from shot geometry.
 
 ## How to map a real hole quickly
 

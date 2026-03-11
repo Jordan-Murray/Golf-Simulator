@@ -16,6 +16,7 @@ const CLUB_CONFIG = {
     11: { color: 0xfdd835, arc: 0.40, name: 'SW' },
     12: { color: 0xfdd835, arc: 0.45, name: 'LW' },
     13: { color: 0xffffff, arc: 0.0,  name: 'Putter' },
+    99: { color: 0xff5252, arc: 0.0,  name: 'Penalty' }
 };
 
 const DEFAULT_CONFIG = { color: 0xaaaaaa, arc: 0.20, name: '?' };

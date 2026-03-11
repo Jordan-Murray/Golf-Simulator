@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ArccosScraper.Services;
 using GolfWeb.Options;
 using GolfWeb.Services;
 using Microsoft.Extensions.FileProviders;
@@ -19,7 +20,14 @@ builder.Services.AddOptions<AppPathsOptions>()
     .Bind(builder.Configuration.GetSection("AppPaths"))
     .PostConfigure(o => AppPathDefaults.Apply(o, repoRoot));
 
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var allowedOrigins = configuredOrigins.Length > 0
+    ? configuredOrigins
+    : (
+        builder.Environment.IsDevelopment()
+            ? ["http://localhost:8080", "http://127.0.0.1:8080"]
+            : []
+    );
 if (allowedOrigins.Length > 0)
 {
     builder.Services.AddCors(o =>
@@ -122,6 +130,58 @@ app.MapGet("/api/data/geometry", () =>
 
     return Results.File(appPaths.CourseGeometryPath, "application/json");
 });
+
+app.MapPost("/api/geometry/import", async (IFormFile? file) =>
+{
+    if (file is null || file.Length <= 0)
+    {
+        return Results.BadRequest(new { message = "No file uploaded. Use form field name 'file'." });
+    }
+
+    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+    if (ext is not ".geojson" and not ".json" and not ".kml")
+    {
+        return Results.BadRequest(new { message = "Unsupported file type. Upload .geojson, .json, or .kml." });
+    }
+
+    if (!File.Exists(appPaths.CsvPath))
+    {
+        return Results.NotFound(new
+        {
+            message = "Shot CSV not found. Export/fetch shot data first in ArccosScraper.",
+            path = appPaths.CsvPath
+        });
+    }
+
+    var tmpPath = Path.Combine(Path.GetTempPath(), $"golf-geometry-{Guid.NewGuid():N}{ext}");
+    try
+    {
+        await using (var fs = File.Create(tmpPath))
+        {
+            await file.CopyToAsync(fs);
+        }
+
+        CourseGeometryImportService.Import(tmpPath, appPaths.CsvPath, appPaths.CourseGeometryPath);
+
+        return Results.Ok(new
+        {
+            message = "Geometry import completed.",
+            sourceFile = file.FileName,
+            outputPath = appPaths.CourseGeometryPath
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = $"Geometry import failed: {ex.Message}" });
+    }
+    finally
+    {
+        if (File.Exists(tmpPath))
+        {
+            try { File.Delete(tmpPath); } catch { }
+        }
+    }
+}).DisableAntiforgery();
 
 app.MapPost("/api/simulate", (SimulateRequest request, SimulationApiService simulationApi) =>
 {

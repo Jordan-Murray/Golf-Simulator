@@ -9,6 +9,76 @@ body {
 
 #canvas { display: block; }
 
+#btn-open-menu {
+    padding: 5px 11px;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    font-size: 0.82rem;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+#btn-open-menu:hover {
+    background: rgba(255,255,255,0.28);
+}
+
+#main-menu {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 35%, rgba(40,80,60,0.55), rgba(5,10,16,0.78));
+}
+#main-menu-card {
+    width: min(430px, calc(100vw - 34px));
+    background: rgba(0,0,0,0.66);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 20px 18px 16px;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.45);
+}
+#main-menu-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+#main-menu-subtitle {
+    font-size: 0.9rem;
+    color: #cfd8dc;
+    margin-bottom: 12px;
+}
+.main-menu-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 9px;
+    background: rgba(255,255,255,0.11);
+    color: #fff;
+    text-align: left;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.main-menu-btn:hover {
+    background: rgba(255,255,255,0.2);
+}
+#menu-settings {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    display: none;
+}
+#menu-settings-status {
+    margin: 8px 2px 0;
+    white-space: pre-wrap;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    color: #d7d7d7;
+}
+
 /* Loading overlay */
 #loading {
     position: fixed; inset: 0;
@@ -24,7 +94,7 @@ body {
     display: flex; align-items: center; gap: 20px;
     padding: 12px 20px;
     background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
-    z-index: 14;
+    z-index: 20;
     pointer-events: none;
 }
 #top-bar > * { pointer-events: auto; }
@@ -38,6 +108,7 @@ body {
     border-radius: 4px;
     color: #fff; font-size: 0.85rem;
     cursor: pointer;
+    max-width: min(54vw, 540px);
 }
 #round-select option { background: #1a1a2e; }
 
@@ -109,32 +180,17 @@ body {
 #btn-worst-hole:hover {
     background: rgba(229, 57, 53, 0.34);
 }
-#sim-holes,
-#sim-rounds {
-    padding: 4px 8px;
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 4px;
-    color: #fff;
-    font-size: 0.82rem;
-}
-#sim-holes option {
-    background: #1a1a2e;
-}
-#sim-rounds {
-    width: 74px;
-}
-#btn-sim-api {
-    padding: 5px 10px;
-    background: rgba(30, 136, 229, 0.24);
-    border: 1px solid rgba(30, 136, 229, 0.65);
+#btn-import-geometry {
+    padding: 10px 12px;
+    background: rgba(255, 167, 38, 0.22);
+    border: 1px solid rgba(255, 167, 38, 0.65);
     border-radius: 6px;
-    color: #d8eefe;
+    color: #fff2db;
     font-size: 0.8rem;
     cursor: pointer;
 }
-#btn-sim-api:hover {
-    background: rgba(30, 136, 229, 0.4);
+#btn-import-geometry:hover {
+    background: rgba(255, 167, 38, 0.36);
 }
 
 /* ---- Hole Info (left panel) ---- */
@@ -145,7 +201,7 @@ body {
     border-radius: 10px;
     padding: 16px 20px;
     min-width: 160px;
-    z-index: 10;
+    z-index: 15;
 }
 #hole-title { font-size: 1.5rem; font-weight: 700; }
 #hole-par { font-size: 0.9rem; color: #aaa; margin-bottom: 6px; }
@@ -155,12 +211,12 @@ body {
     position: fixed;
     left: 16px;
     top: 206px;
-    width: 280px;
+    width: min(390px, calc(100vw - 32px));
     background: rgba(0,0,0,0.55);
     backdrop-filter: blur(8px);
     border-radius: 10px;
     padding: 12px 14px;
-    z-index: 10;
+    z-index: 15;
     border: 1px solid rgba(255,255,255,0.12);
 }
 #hole-analytics-title {
@@ -172,8 +228,8 @@ body {
 #hole-analytics-body {
     margin: 0;
     white-space: pre-wrap;
-    font-size: 0.74rem;
-    line-height: 1.35;
+    font-size: 0.79rem;
+    line-height: 1.5;
     color: #d7d7d7;
 }
 
@@ -186,18 +242,63 @@ body {
     padding: 16px 20px;
     min-width: 160px;
     text-align: right;
-    z-index: 10;
+    z-index: 15;
 }
 #shot-num { font-size: 0.85rem; color: #aaa; }
 #shot-club { font-size: 1.3rem; font-weight: 600; margin: 4px 0; }
 #shot-dist { font-size: 1rem; color: #ccc; }
+#shot-note {
+    margin-top: 6px;
+    min-height: 1.1em;
+    font-size: 0.8rem;
+    color: #ffccbc;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+#shot-panel.penalty #shot-club {
+    color: #ffab91;
+}
+#shot-panel.penalty #shot-note {
+    opacity: 1;
+    color: #ff8a80;
+    font-weight: 600;
+}
+
+/* ---- Caddie Panel ---- */
+#caddie-panel {
+    position: fixed;
+    right: 16px;
+    top: 220px;
+    width: min(350px, calc(100vw - 32px));
+    max-height: calc(100vh - 248px);
+    overflow: auto;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 14px;
+    z-index: 15;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+#caddie-title {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #e7f1ff;
+    margin-bottom: 6px;
+}
+#caddie-body {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: #dce5ef;
+}
 
 /* ---- Geometry Debug ---- */
 #geometry-debug {
     display: none;
     position: fixed;
     right: 16px;
-    top: 220px;
+    top: 432px;
     width: 320px;
     max-height: 46vh;
     overflow: auto;
@@ -205,7 +306,7 @@ body {
     backdrop-filter: blur(8px);
     border-radius: 10px;
     padding: 12px 14px;
-    z-index: 14;
+    z-index: 16;
     border: 1px solid rgba(255,255,255,0.12);
 }
 #geometry-debug-title {
@@ -218,34 +319,6 @@ body {
     margin: 0;
     white-space: pre-wrap;
     font-size: 0.75rem;
-    line-height: 1.35;
-    color: #d7d7d7;
-}
-
-#sim-api-panel {
-    position: fixed;
-    right: 16px;
-    top: 520px;
-    width: 320px;
-    max-height: 34vh;
-    overflow: auto;
-    background: rgba(0,0,0,0.55);
-    backdrop-filter: blur(8px);
-    border-radius: 10px;
-    padding: 12px 14px;
-    z-index: 14;
-    border: 1px solid rgba(255,255,255,0.12);
-}
-#sim-api-title {
-    font-size: 0.86rem;
-    font-weight: 700;
-    color: #d7e9ff;
-    margin-bottom: 6px;
-}
-#sim-api-body {
-    margin: 0;
-    white-space: pre-wrap;
-    font-size: 0.74rem;
     line-height: 1.35;
     color: #d7d7d7;
 }

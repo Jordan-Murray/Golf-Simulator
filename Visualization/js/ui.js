@@ -8,9 +8,13 @@ export function initUI() {
         holePar: document.getElementById('hole-par'),
         holeScore: document.getElementById('hole-score'),
         holeAnalyticsBody: document.getElementById('hole-analytics-body'),
+        shotPanel: document.getElementById('shot-panel'),
         shotClub: document.getElementById('shot-club'),
         shotDist: document.getElementById('shot-dist'),
+        shotNote: document.getElementById('shot-note'),
         shotNum: document.getElementById('shot-num'),
+        caddiePanel: document.getElementById('caddie-panel'),
+        caddieBody: document.getElementById('caddie-body'),
         geometryDebug: document.getElementById('geometry-debug'),
         geometryDebugBody: document.getElementById('geometry-debug-body'),
         scorecard: document.getElementById('scorecard'),
@@ -21,10 +25,14 @@ export function initUI() {
         spreadHeatmap: document.getElementById('spread-heatmap'),
         btnBestHole: document.getElementById('btn-best-hole'),
         btnWorstHole: document.getElementById('btn-worst-hole'),
-        simHoles: document.getElementById('sim-holes'),
-        simRounds: document.getElementById('sim-rounds'),
-        btnSimApi: document.getElementById('btn-sim-api'),
-        simApiBody: document.getElementById('sim-api-body'),
+        btnMenuSettings: document.getElementById('btn-menu-settings'),
+        menuSettings: document.getElementById('menu-settings'),
+        btnImportGeometry: document.getElementById('btn-import-geometry'),
+        importGeometryFile: document.getElementById('import-geometry-file'),
+        settingsStatus: document.getElementById('menu-settings-status'),
+        mainMenu: document.getElementById('main-menu'),
+        btnOpenMenu: document.getElementById('btn-open-menu'),
+        mainMenuButtons: Array.from(document.querySelectorAll('.main-menu-btn[data-mode]')),
         btnPlay: document.getElementById('btn-play'),
         shotTimeline: document.getElementById('shot-timeline'),
         timelineLabel: document.getElementById('timeline-label'),
@@ -61,12 +69,27 @@ export function updateShotInfo(shot) {
         elements.shotClub.textContent = '-';
         elements.shotDist.textContent = '-';
         elements.shotNum.textContent = 'On the tee';
+        if (elements.shotNote) elements.shotNote.textContent = '';
+        elements.shotPanel?.classList.remove('penalty');
         return;
     }
 
-    elements.shotClub.textContent = shot.clubName;
-    elements.shotDist.textContent = `${shot.distance} yds`;
+    const penalty = isPenaltyShot(shot);
+    const clubName = String(shot.clubName ?? '').trim() || 'Unknown';
+    const distance = Number(shot.distance);
+
+    elements.shotClub.textContent = penalty ? 'Penalty' : clubName;
+    if (penalty) {
+        elements.shotDist.textContent = Number.isFinite(distance)
+            ? `${distance} yds (no advance)`
+            : '+1 stroke';
+        if (elements.shotNote) elements.shotNote.textContent = 'Penalty stroke (+1)';
+    } else {
+        elements.shotDist.textContent = `${shot.distance} yds`;
+        if (elements.shotNote) elements.shotNote.textContent = '';
+    }
     elements.shotNum.textContent = `Shot ${shot.shotNumber}`;
+    elements.shotPanel?.classList.toggle('penalty', penalty);
 }
 
 export function updateCourseInfo(round) {
@@ -143,21 +166,50 @@ export function onWorstHoleReplay(cb) {
     elements.btnWorstHole.addEventListener('click', () => cb());
 }
 
-export function onSimulateApi(cb) {
-    if (!elements.btnSimApi) return;
-    elements.btnSimApi.addEventListener('click', () => {
-        const holes = Number(elements.simHoles?.value ?? 9);
-        const rounds = Number(elements.simRounds?.value ?? 10);
-        cb({
-            holes: Number.isFinite(holes) ? holes : 9,
-            rounds: Number.isFinite(rounds) ? rounds : 10
-        });
+export function onImportGeometry(cb) {
+    if (!elements.btnImportGeometry || !elements.importGeometryFile) return;
+    elements.btnImportGeometry.addEventListener('click', () => {
+        elements.importGeometryFile.value = '';
+        elements.importGeometryFile.click();
+    });
+    elements.importGeometryFile.addEventListener('change', e => {
+        const file = e.target?.files?.[0];
+        if (file) cb(file);
     });
 }
 
+export function onMenuSettingsToggle(cb) {
+    if (!elements.btnMenuSettings) return;
+    elements.btnMenuSettings.addEventListener('click', () => cb());
+}
+
+export function setMenuSettingsVisible(visible) {
+    if (!elements.menuSettings) return;
+    elements.menuSettings.style.display = visible ? 'block' : 'none';
+}
+
 export function updateSimApiSummary(text) {
-    if (!elements.simApiBody) return;
-    elements.simApiBody.textContent = text;
+    if (!elements.settingsStatus) return;
+    elements.settingsStatus.textContent = text;
+}
+
+export function setMainMenuVisible(visible) {
+    if (!elements.mainMenu) return;
+    elements.mainMenu.style.display = visible ? 'flex' : 'none';
+}
+
+export function onMainMenuSelect(cb) {
+    if (!elements.mainMenuButtons) return;
+    for (const btn of elements.mainMenuButtons) {
+        btn.addEventListener('click', () => {
+            cb(btn.dataset.mode ?? 'replay');
+        });
+    }
+}
+
+export function onOpenMainMenu(cb) {
+    if (!elements.btnOpenMenu) return;
+    elements.btnOpenMenu.addEventListener('click', () => cb());
 }
 
 export function updateGeometryDebug(text) {
@@ -213,6 +265,16 @@ export function updateHoleAnalytics(text) {
     elements.holeAnalyticsBody.textContent = text;
 }
 
+export function updateCaddiePlan(text) {
+    if (!elements.caddieBody) return;
+    elements.caddieBody.textContent = text;
+}
+
+export function setCaddieVisible(visible) {
+    if (!elements.caddiePanel) return;
+    elements.caddiePanel.style.display = visible ? 'block' : 'none';
+}
+
 function scoreName(diff) {
     if (diff <= -2) return 'Eagle';
     if (diff === -1) return 'Birdie';
@@ -220,6 +282,11 @@ function scoreName(diff) {
     if (diff === 1) return 'Bogey';
     if (diff === 2) return 'Double';
     return `+${diff}`;
+}
+
+function isPenaltyShot(shot) {
+    const name = String(shot?.clubName ?? '').trim().toLowerCase();
+    return Number(shot?.clubId) === 99 || name.includes('penalty');
 }
 
 function scoreColor(diff) {

@@ -12,6 +12,7 @@
 *.vsidx
 */.vs/*
 .vs/*
+.run/
 # Build results
 
 [Dd]ebug/
@@ -169,13 +170,13 @@ nupkg/
 appsettings.json
 appsettings.*.json
 !appsettings.example.json
-# QGIS / geometry authoring artifacts
-*.qgz~
-*.qgs~
-*.qgd
-*.qpj
-GeometrySource/tmp/
-GeometrySource/exports/
+# # QGIS / geometry authoring artifacts
+# *.qgz~
+# *.qgs~
+# *.qgd
+# *.qpj
+# GeometrySource/tmp/
+# GeometrySource/exports/
 
 # Generated visualization export (rebuild from scraper)
 Visualization/data/visualization_data.json

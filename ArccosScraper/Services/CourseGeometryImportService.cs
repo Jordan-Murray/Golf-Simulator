@@ -1,6 +1,7 @@
 using Microsoft.VisualBasic.FileIO;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Xml.Linq;
 
 namespace ArccosScraper.Services;
@@ -46,7 +47,8 @@ public static class CourseGeometryImportService
             _ => throw new InvalidOperationException("Unsupported geometry format. Use .geojson/.json or .kml.")
         };
 
-        var output = new CourseGeometryFile();
+        var output = LoadExistingOutputOrNew(outputPath);
+        var clearedFeatureSlots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var mapped = 0;
         var skipped = 0;
 
@@ -61,6 +63,7 @@ public static class CourseGeometryImportService
 
             var course = GetOrAddCourse(output, feature.CourseName);
             var hole = GetOrAddHole(course, feature.HoleNumber);
+            EnsureFeatureSlotCleared(hole, feature.Type, feature.CourseName, feature.HoleNumber, clearedFeatureSlots);
 
             var pinRaw = GpsToMeters(holeRef.PinLat, holeRef.PinLng, holeRef.TeeLat, holeRef.TeeLng);
             var angle = Math.Atan2(pinRaw.x, pinRaw.z);
@@ -71,7 +74,11 @@ public static class CourseGeometryImportService
                     ApplyPrimaryPolygon(feature.Polygons, holeRef, angle, p => hole.Tee = p, hole.Tee);
                     break;
                 case GeometryType.Fairway:
-                    ApplyPrimaryPolygon(feature.Polygons, holeRef, angle, p => hole.Fairway = p, hole.Fairway);
+                    foreach (var poly in feature.Polygons)
+                    {
+                        var transformed = TransformPolygon(poly, holeRef, angle);
+                        if (transformed.Count >= 3) hole.Fairway.Add(transformed);
+                    }
                     break;
                 case GeometryType.Green:
                     ApplyPrimaryPolygon(feature.Polygons, holeRef, angle, p => hole.Green = p, hole.Green);
@@ -159,6 +166,57 @@ public static class CourseGeometryImportService
         return bestByHole.ToDictionary(
             kvp => kvp.Key,
             kvp => new HoleReference(kvp.Value.TeeLat, kvp.Value.TeeLng, kvp.Value.PinLat, kvp.Value.PinLng));
+    }
+
+    private static CourseGeometryFile LoadExistingOutputOrNew(string outputPath)
+    {
+        if (!File.Exists(outputPath))
+            return new CourseGeometryFile();
+
+        try
+        {
+            var existing = JsonSerializer.Deserialize<CourseGeometryFile>(
+                File.ReadAllText(outputPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return existing ?? new CourseGeometryFile();
+        }
+        catch
+        {
+            return new CourseGeometryFile();
+        }
+    }
+
+    private static void EnsureFeatureSlotCleared(
+        CourseGeometryHole hole,
+        GeometryType type,
+        string courseName,
+        int holeNumber,
+        HashSet<string> cleared)
+    {
+        var key = $"{courseName}|{holeNumber}|{type}";
+        if (!cleared.Add(key)) return;
+
+        switch (type)
+        {
+            case GeometryType.Tee:
+                hole.Tee = null;
+                break;
+            case GeometryType.Fairway:
+                hole.Fairway = [];
+                break;
+            case GeometryType.Green:
+                hole.Green = null;
+                break;
+            case GeometryType.Bunker:
+                hole.Bunkers = [];
+                break;
+            case GeometryType.Water:
+                hole.Water = [];
+                break;
+            case GeometryType.Trees:
+                hole.Trees = [];
+                break;
+        }
     }
 
     private static bool IsBetterReference(HoleReferenceCandidate candidate, HoleReferenceCandidate current)
@@ -680,8 +738,14 @@ public sealed class CourseGeometryCourse
 public sealed class CourseGeometryHole
 {
     public int HoleNumber { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ForceMirrored { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ForceFlip180 { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ForceMirrorShots { get; set; }
     public List<double[]>? Tee { get; set; }
-    public List<double[]>? Fairway { get; set; }
+    public List<List<double[]>> Fairway { get; set; } = [];
     public List<double[]>? Green { get; set; }
     public List<List<double[]>> Bunkers { get; set; } = [];
     public List<List<double[]>> Water { get; set; } = [];

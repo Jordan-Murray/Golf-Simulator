@@ -16,6 +16,13 @@ let finalPuttIdx = -1;
 const BALL_RADIUS = 0.2;
 const ARC_SEGMENTS = 64;
 const SHOT_GROUP_TAG = 'golf-shot-group';
+const SURFACE_CLEARANCE_Y = 0.005;
+const FAIRWAY_SURFACE_Y = 0.0;
+const GREEN_SURFACE_Y = 0.04;
+const TEE_SURFACE_Y = 0.05;
+const SHOT_GROUND_Y = BALL_RADIUS + FAIRWAY_SURFACE_Y + SURFACE_CLEARANCE_Y;
+const PUTT_GROUND_Y = BALL_RADIUS + GREEN_SURFACE_Y + SURFACE_CLEARANCE_Y;
+const TEE_GROUND_Y = BALL_RADIUS + TEE_SURFACE_Y + SURFACE_CLEARANCE_Y;
 
 export function buildShots(scene, holeData) {
     removeTaggedGroups(scene, SHOT_GROUP_TAG);
@@ -36,7 +43,7 @@ export function buildShots(scene, holeData) {
     });
     ballMesh = new THREE.Mesh(ballGeom, ballMat);
     ballMesh.castShadow = true;
-    ballMesh.position.set(0, BALL_RADIUS, 0);
+    ballMesh.position.set(0, TEE_GROUND_Y, 0);
     shotGroup.add(ballMesh);
 
     const markerGeom = new THREE.RingGeometry(0.12, 0.3, 18);
@@ -52,16 +59,19 @@ export function buildShots(scene, holeData) {
 
     // Build curves for each shot
     holeData.shots.forEach((shot, idx) => {
-        let start = new THREE.Vector3(shot.start.x, shot.start.y + BALL_RADIUS, shot.start.z);
-        const end = new THREE.Vector3(shot.end.x, shot.end.y + BALL_RADIUS, shot.end.z);
+        // Keep replay paths grounded to geometry surfaces; altitude noise makes balls appear to float.
+        const startY = Number(shot.shotNumber) === 1 ? TEE_GROUND_Y : SHOT_GROUND_Y;
+        let start = new THREE.Vector3(shot.start.x, startY, shot.start.z);
+        const endY = Number(shot.clubId) === 13 ? PUTT_GROUND_Y : SHOT_GROUND_Y;
+        const end = new THREE.Vector3(shot.end.x, endY, shot.end.z);
 
         // Keep putts visually continuous so the ball rolls from where the previous shot finished.
         if (shot.clubId === 13 && prevEnd) {
             start = prevEnd.clone();
-            start.y = Math.max(start.y, BALL_RADIUS);
+            start.y = PUTT_GROUND_Y;
         }
         if (shot.clubId === 13) {
-            const puttY = Math.max(start.y, BALL_RADIUS + 0.06);
+            const puttY = PUTT_GROUND_Y;
             start.y = puttY;
             end.y = puttY;
             // Make the final putt finish at the cup so the replay always shows a satisfying hole-out.
@@ -277,7 +287,7 @@ function drawCurveSegment(entry, progress = 1) {
 function renderPlaybackState() {
     if (!ballMesh) return;
     if (currentShotIdx < 0) {
-        ballMesh.position.set(0, BALL_RADIUS, 0);
+        ballMesh.position.set(0, TEE_GROUND_Y, 0);
         if (ballGroundMarker) ballGroundMarker.position.set(0, 0.05, 0);
         clearShotVisuals();
         return;

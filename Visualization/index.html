@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golf 3D - Shot Visualizer</title>
-    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/style.css?v=20260311e" />
     <script type="importmap">
     {
         "imports": {
@@ -17,6 +17,20 @@
 <body>
     <div id="loading">Loading visualization data...</div>
     <canvas id="canvas"></canvas>
+    <div id="main-menu">
+        <div id="main-menu-card">
+            <div id="main-menu-title">Golf Visualizer</div>
+            <div id="main-menu-subtitle">Choose what you want to do</div>
+            <button class="main-menu-btn" data-mode="replay">Play Round Replay</button>
+            <button class="main-menu-btn" data-mode="spread">Shot Spread Analysis</button>
+            <button id="btn-menu-settings" class="main-menu-btn" type="button">Settings</button>
+            <div id="menu-settings">
+                <button id="btn-import-geometry" class="main-menu-btn" type="button" title="Import geometry source file">Import GeoJSON / KML</button>
+                <input id="import-geometry-file" type="file" accept=".geojson,.json,.kml" hidden />
+                <pre id="menu-settings-status">Ready.</pre>
+            </div>
+        </div>
+    </div>
 
     <div id="top-bar">
         <span id="course-name">-</span>
@@ -42,13 +56,8 @@
         </label>
         <button id="btn-best-hole" title="Replay best score on this hole">Replay Best Hole</button>
         <button id="btn-worst-hole" title="Replay worst score on this hole">Replay Worst Hole</button>
-        <select id="sim-holes" title="Simulation holes">
-            <option value="9" selected>Sim 9</option>
-            <option value="18">Sim 18</option>
-        </select>
-        <input id="sim-rounds" type="number" min="1" max="100" value="10" />
-        <button id="btn-sim-api" title="Run simulation API">Run Sim API</button>
         <select id="round-select"></select>
+        <button id="btn-open-menu" title="Open menu">Menu</button>
     </div>
 
     <div id="hole-panel">
@@ -66,17 +75,18 @@
         <div id="shot-num">On the tee</div>
         <div id="shot-club">-</div>
         <div id="shot-dist">-</div>
+        <div id="shot-note"></div>
+    </div>
+
+    <div id="caddie-panel">
+        <div id="caddie-title">Pre-Shot Caddie</div>
+        <pre id="caddie-body">Building plan...</pre>
     </div>
 
     <div id="geometry-debug">
         <div id="geometry-debug-title">Geometry Debug</div>
         <pre id="geometry-debug-body">Waiting for hole...</pre>
     </div>
-    <div id="sim-api-panel">
-        <div id="sim-api-title">Simulation API</div>
-        <pre id="sim-api-body">Not run yet.</pre>
-    </div>
-
     <div id="controls">
         <button class="ctrl-btn" id="btn-prev-hole" title="Previous Hole"><<</button>
         <button class="ctrl-btn" id="btn-prev-shot" title="Previous Shot"><</button>
@@ -100,8 +110,8 @@
         <div id="scorecard"></div>
     </div>
 
-    <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst</div>
+    <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst | M menu | Esc close menu</div>
 
-    <script type="module" src="js/main.js?v=20260309o"></script>
+    <script type="module" src="js/main.js?v=20260311n"></script>
 </body>
 </html>
