@@ -38,6 +38,17 @@ public class ApiIntegrationTests : IClassFixture<TestApiFactory>
     }
 
     [Fact]
+    public async Task SmartDistances_ReturnsConfiguredFile()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/data/smart-distances");
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"clubId\": 8", payload);
+    }
+
+    [Fact]
     public async Task Simulate_ReturnsNotFound_WhenCsvMissing()
     {
         using var client = _factory.CreateClient();
@@ -65,6 +76,7 @@ public sealed class TestApiFactory : WebApplicationFactory<Program>
 
         var vizPath = Path.Combine(_tmpRoot, "visualization_data.json");
         var geoPath = Path.Combine(_tmpRoot, "course_geometry.json");
+        var smartPath = Path.Combine(_tmpRoot, "smart_distances.json");
         File.WriteAllText(vizPath, """
             {
               "rounds": [
@@ -75,6 +87,21 @@ public sealed class TestApiFactory : WebApplicationFactory<Program>
             }
             """);
         File.WriteAllText(geoPath, """{ "courses": [] }""");
+        File.WriteAllText(smartPath, """
+            [
+              {
+                "clubId": 8,
+                "smartDistance": { "distance": 137.0 },
+                "terrain": {
+                  "tee": { "distance": 147.5 },
+                  "fairway": { "distance": 137.0 },
+                  "rough": { "distance": 140.7 },
+                  "sand": { "distance": 86.3 }
+                },
+                "range": { "low": 127.2, "high": 143.7 }
+              }
+            ]
+            """);
 
         _cfg = new Dictionary<string, string?>
         {
@@ -82,7 +109,7 @@ public sealed class TestApiFactory : WebApplicationFactory<Program>
             ["AppPaths:VisualizationDataPath"] = vizPath,
             ["AppPaths:CourseGeometryPath"] = geoPath,
             ["AppPaths:CsvPath"] = Path.Combine(_tmpRoot, "missing.csv"),
-            ["AppPaths:SmartDistancesPath"] = Path.Combine(_tmpRoot, "missing-smart.json"),
+            ["AppPaths:SmartDistancesPath"] = smartPath,
             ["AppPaths:DashboardPath"] = Path.Combine(_tmpRoot, "missing-dash.json"),
             ["AppPaths:SimulationSettingsPath"] = Path.Combine(_tmpRoot, "simulation_settings.json")
         };

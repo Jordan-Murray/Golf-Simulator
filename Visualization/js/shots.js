@@ -127,8 +127,10 @@ export function buildShotSpread(scene, holes, options = {}) {
             if (!includeSpreadShot(shot, options)) continue;
             const start = new THREE.Vector3(Number(shot.start?.x ?? 0), 0.15, Number(shot.start?.z ?? 0));
             const end = new THREE.Vector3(Number(shot.end?.x ?? 0), 0.15, Number(shot.end?.z ?? 0));
-            addSpreadLine(start, end, shot.clubId);
             spreadShots.push({ start, end, clubId: shot.clubId });
+            if (options.showShots !== false) {
+                addSpreadLine(start, end, shot.clubId, options);
+            }
         }
     }
     if (options.heatmap) {
@@ -149,21 +151,26 @@ function includeSpreadShot(shot, options) {
     return true;
 }
 
-function addSpreadLine(start, end, clubId) {
+function addSpreadLine(start, end, clubId, options = {}) {
+    const insightMode = !!options.insightAim || !!options.insightDispersion || !!options.insightPenalty;
+    const useNeutralColor = insightMode && String(options.club ?? 'all') === 'all';
+    const color = useNeutralColor ? 0x9ec3d8 : getClubColor(clubId);
+    const lineOpacity = useNeutralColor ? 0.16 : 0.25;
+    const markerOpacity = useNeutralColor ? 0.2 : 0.35;
     const geom = new THREE.BufferGeometry().setFromPoints([start, end]);
     const mat = new THREE.LineBasicMaterial({
-        color: getClubColor(clubId),
+        color,
         transparent: true,
-        opacity: 0.25
+        opacity: lineOpacity
     });
     const line = new THREE.Line(geom, mat);
     shotGroup.add(line);
 
     const markerGeom = new THREE.CircleGeometry(0.45, 12);
     const markerMat = new THREE.MeshBasicMaterial({
-        color: getClubColor(clubId),
+        color,
         transparent: true,
-        opacity: 0.35
+        opacity: markerOpacity
     });
     const marker = new THREE.Mesh(markerGeom, markerMat);
     marker.rotation.x = -Math.PI / 2;

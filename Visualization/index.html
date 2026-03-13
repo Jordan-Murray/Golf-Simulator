@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golf 3D - Shot Visualizer</title>
-    <link rel="stylesheet" href="css/style.css?v=20260311e" />
+    <link rel="stylesheet" href="css/style.css?v=20260313b" />
     <script type="importmap">
     {
         "imports": {
@@ -27,6 +27,14 @@
             <div id="menu-settings">
                 <button id="btn-import-geometry" class="main-menu-btn" type="button" title="Import geometry source file">Import GeoJSON / KML</button>
                 <input id="import-geometry-file" type="file" accept=".geojson,.json,.kml" hidden />
+                <div id="panel-visibility">
+                    <div id="panel-visibility-title">Panels</div>
+                    <label class="panel-visibility-item"><input id="panel-hole" type="checkbox" checked /> Hole card</label>
+                    <label class="panel-visibility-item"><input id="panel-analytics" type="checkbox" checked /> Analytics</label>
+                    <label class="panel-visibility-item"><input id="panel-shot" type="checkbox" checked /> Shot card</label>
+                    <label class="panel-visibility-item"><input id="panel-caddie" type="checkbox" checked /> Pre-shot caddie</label>
+                    <label class="panel-visibility-item"><input id="panel-spread-legend" type="checkbox" checked /> Spread legend</label>
+                </div>
                 <pre id="menu-settings-status">Ready.</pre>
             </div>
         </div>
@@ -35,25 +43,17 @@
     <div id="top-bar">
         <span id="course-name">-</span>
         <span id="round-info">-</span>
-        <label id="spread-toggle">
-            <input id="spread-mode" type="checkbox" />
-            <span>Spread Mode</span>
-        </label>
         <select id="spread-club">
             <option value="all">All Clubs</option>
             <option value="tee">Tee Shots</option>
             <option value="13">Putter</option>
         </select>
         <select id="spread-range">
-            <option value="all">All Rounds</option>
+            <option value="all" selected>All Rounds</option>
             <option value="50">Last 50</option>
-            <option value="20" selected>Last 20</option>
+            <option value="20">Last 20</option>
             <option value="10">Last 10</option>
         </select>
-        <label id="heatmap-toggle">
-            <input id="spread-heatmap" type="checkbox" checked />
-            <span>Heatmap</span>
-        </label>
         <button id="btn-best-hole" title="Replay best score on this hole">Replay Best Hole</button>
         <button id="btn-worst-hole" title="Replay worst score on this hole">Replay Worst Hole</button>
         <select id="round-select"></select>
@@ -67,8 +67,12 @@
     </div>
 
     <div id="hole-analytics">
-        <div id="hole-analytics-title">Hole Analytics</div>
-        <pre id="hole-analytics-body">Spread mode off</pre>
+        <div id="hole-analytics-header">
+            <div id="hole-analytics-title">Hole Analytics</div>
+            <button id="btn-analytics-toggle" type="button" title="Show or hide detailed analytics">Show Details</button>
+        </div>
+        <div id="hole-analytics-summary">Loading analytics...</div>
+        <div id="hole-analytics-body" hidden>Detailed analytics hidden.</div>
     </div>
 
     <div id="shot-panel">
@@ -80,7 +84,41 @@
 
     <div id="caddie-panel">
         <div id="caddie-title">Pre-Shot Caddie</div>
-        <pre id="caddie-body">Building plan...</pre>
+        <div id="caddie-body">Building plan...</div>
+    </div>
+
+    <div id="spread-legend">
+        <div id="spread-legend-title">Spread Legend</div>
+        <div id="spread-legend-subtitle">Toggle spread layers</div>
+        <label class="legend-toggle">
+            <input id="spread-show-shots" type="checkbox" />
+            <span>Spread Shots</span>
+        </label>
+        <label class="legend-toggle">
+            <input id="spread-heatmap" type="checkbox" />
+            <span>Heatmap</span>
+        </label>
+        <label class="legend-toggle">
+            <input id="insight-layer-aim" type="checkbox" checked />
+            <span>Aim Lines</span>
+        </label>
+        <label class="legend-toggle">
+            <input id="insight-layer-dispersion" type="checkbox" checked />
+            <span>Dispersion</span>
+        </label>
+        <label class="legend-toggle">
+            <input id="insight-layer-penalty" type="checkbox" />
+            <span>Penalty Hotspots</span>
+        </label>
+        <div class="legend-list">
+            <div class="legend-item" data-layer="showShots"><span class="legend-swatch legend-shot"></span> Shot traces + landing dots</div>
+            <div class="legend-item" data-layer="heatmap"><span class="legend-swatch legend-heatmap"></span> Heatmap intensity blobs</div>
+            <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-base"></span> Tee to pin reference</div>
+            <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-ideal"></span> Ideal starting line</div>
+            <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-miss"></span> Miss trend vector</div>
+            <div class="legend-item" data-layer="insightDispersion"><span class="legend-swatch legend-dispersion"></span> Dispersion envelope</div>
+            <div class="legend-item" data-layer="insightPenalty"><span class="legend-swatch legend-penalty"></span> Penalty source hotspots</div>
+        </div>
     </div>
 
     <div id="geometry-debug">
@@ -112,6 +150,6 @@
 
     <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst | M menu | Esc close menu</div>
 
-    <script type="module" src="js/main.js?v=20260311n"></script>
+    <script type="module" src="js/main.js?v=20260313d"></script>
 </body>
 </html>

@@ -131,6 +131,20 @@ app.MapGet("/api/data/geometry", () =>
     return Results.File(appPaths.CourseGeometryPath, "application/json");
 });
 
+app.MapGet("/api/data/smart-distances", () =>
+{
+    if (!File.Exists(appPaths.SmartDistancesPath))
+    {
+        return Results.NotFound(new
+        {
+            message = "smart_distances.json not found. Run ArccosScraper export first.",
+            path = appPaths.SmartDistancesPath
+        });
+    }
+
+    return Results.File(appPaths.SmartDistancesPath, "application/json");
+});
+
 app.MapPost("/api/geometry/import", async (IFormFile? file) =>
 {
     if (file is null || file.Length <= 0)
