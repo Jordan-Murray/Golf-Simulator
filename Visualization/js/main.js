@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createScene, frameHole, focusCameraForPutt } from './scene.js?v=20260309i';
 import { buildHole } from './course.js?v=20260311n';
 import { buildShots, buildShotSpread, nextShot, prevShot, togglePlay, goToShot, getCurrentShot, updateAnimation, getShotCount, getPlaybackValue, seekPlayback, setCinematicMode, getBallPositionXZ } from './shots.js?v=20260312b';
-import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, setGeometryDebugVisible, updateHoleAnalytics, updateCaddiePlan, updatePlannerPanel, onCaddiePlanSelect, onPlannerChange, setCaddieVisible, setPlannerVisible, setSpreadLegendVisible, syncSpreadLegendItems, setHolePanelVisible, setHoleAnalyticsVisible, setShotPanelVisible, onSpreadFiltersChange, getSpreadFilters, onPanelVisibilityChange, getPanelVisibility, onBestHoleReplay, onWorstHoleReplay, setRoundSelection, onImportGeometry, onMenuSettingsToggle, setMenuSettingsVisible, updateSimApiSummary, setMainMenuVisible, onMainMenuSelect, onOpenMainMenu, onAnalyticsToggle, setAnalyticsDetailsVisible } from './ui.js?v=20260316f';
+import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, setGeometryDebugVisible, updateHoleAnalytics, updateCaddiePlan, updatePlannerPanel, onCaddiePlanSelect, onPlannerChange, setCaddieVisible, setPlannerVisible, setSpreadLegendVisible, syncSpreadLegendItems, setHolePanelVisible, setHoleAnalyticsVisible, setShotPanelVisible, onSpreadFiltersChange, getSpreadFilters, onPanelVisibilityChange, getPanelVisibility, onBestHoleReplay, onWorstHoleReplay, setRoundSelection, onImportGeometry, onMenuSettingsToggle, setMenuSettingsVisible, updateSimApiSummary, setMainMenuVisible, onMainMenuSelect, onOpenMainMenu, onAnalyticsToggle, setAnalyticsDetailsVisible, onAnalyticsBenchmarkModeChange, getAnalyticsBenchmarkMode } from './ui.js?v=20260316h';
 
 let vizData = null;
 let geometryData = null;
@@ -11,6 +11,15 @@ let clubNameIndex = new Map();
 let shotOutcomeIndexByClubId = new Map();
 let shotOutcomeIndexByLie = new Map();
 let shotOutcomeIndexAll = [];
+let stateBaselineIndexByLie = new Map();
+let stateBaselineAll = [];
+let targetBaselineIndexByLie = new Map();
+let targetBaselineAll = [];
+let targetBenchmarkInfo = {
+    roundCount: 0,
+    share: 0,
+    label: 'Target benchmark unavailable'
+};
 let currentRoundIdx = 0;
 let currentHoleIdx = 0;
 let currentHoleForRender = null;
@@ -20,7 +29,9 @@ let currentSelectedHole = null;
 let currentSpreadSamples = [];
 let currentAnalysisSamples = [];
 let currentTeeOptions = [];
+let currentPlannerOptions = [];
 let currentPlannerModel = null;
+let teeDispersionIndexByClub = new Map();
 let cameraPuttMode = false;
 let cameraUserOverrideUntil = 0;
 let geometryDebugVisible = false;
@@ -36,6 +47,7 @@ let spreadFilters = {
 };
 let selectedTeePlanClub = null;
 let analyticsDetailsVisible = false;
+let analyticsBenchmarkMode = 'personal';
 let panelVisibility = {
     hole: true,
     analytics: true,
@@ -46,7 +58,8 @@ let panelVisibility = {
 };
 let plannerState = {
     club: null,
-    aimOffsetMeters: 0
+    aimOffsetMeters: 0,
+    manualAimPoint: null
 };
 let sceneCtx = null;
 const clock = { last: 0 };
@@ -55,9 +68,12 @@ const FORCE_GEOMETRY_FLIP_180 = false;
 const STRICT_VISUAL_ANCHOR_MODE = false;
 const AUTO_MIRROR_GEOMETRY = true;
 const API_BASE = resolveApiBase();
+const plannerRaycaster = new THREE.Raycaster();
+const plannerGroundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 async function init() {
     initUI();
+    analyticsBenchmarkMode = getAnalyticsBenchmarkMode();
     setMainMenuVisible(true);
     setMenuSettingsVisible(false);
     setGeometryDebugVisible(geometryDebugVisible);
@@ -82,7 +98,7 @@ async function init() {
         geometryData = null;
     }
 
-    rebuildShotOutcomeIndex();
+    rebuildDerivedIndexes();
 
     try {
         const payload = await fetchApiFirstJson('/api/data/smart-distances', 'data/smart_distances.json');
@@ -100,6 +116,7 @@ async function init() {
 
     const canvas = document.getElementById('canvas');
     sceneCtx = createScene(canvas);
+    bindPlannerCanvasTargeting(canvas);
     sceneCtx.controls.addEventListener('start', () => {
         cameraUserOverrideUntil = performance.now() + 2000;
     });
@@ -193,7 +210,7 @@ async function init() {
     onHoleClick(idx => {
         currentHoleIdx = idx;
         selectedTeePlanClub = null;
-        plannerState = { club: null, aimOffsetMeters: 0 };
+        plannerState = { club: null, aimOffsetMeters: 0, manualAimPoint: null };
         loadHole();
     });
 
@@ -213,6 +230,10 @@ async function init() {
     onAnalyticsToggle(() => {
         analyticsDetailsVisible = !analyticsDetailsVisible;
         setAnalyticsDetailsVisible(analyticsDetailsVisible);
+    });
+    onAnalyticsBenchmarkModeChange(mode => {
+        analyticsBenchmarkMode = normalizeAnalyticsBenchmarkMode(mode);
+        refreshAnalyticsPanelOnly();
     });
     onSpreadFiltersChange(filters => {
         const prev = spreadFilters;
@@ -245,9 +266,19 @@ async function init() {
         refreshCaddieAndInsights();
     });
     onPlannerChange((next, meta = {}) => {
+        if (meta.action === 'reset') {
+            plannerState = {
+                ...plannerState,
+                manualAimPoint: null,
+                aimOffsetMeters: 0
+            };
+            refreshPlannerAndInsights();
+            return;
+        }
         plannerState = {
             club: String(next?.club ?? '').trim() || plannerState.club,
-            aimOffsetMeters: clamp(Number(next?.aimOffsetMeters) || 0, -24, 24)
+            aimOffsetMeters: clamp(Number(next?.aimOffsetMeters) || 0, -24, 24),
+            manualAimPoint: plannerState.manualAimPoint
         };
         if (meta.live && meta.source === 'aim') {
             refreshPlannerOverlayPreview();
@@ -356,7 +387,7 @@ async function runGeometryImportApi(file) {
 
         try {
             geometryData = await fetchApiFirstJson('/api/data/geometry', 'data/course_geometry.json');
-            rebuildShotOutcomeIndex();
+            rebuildDerivedIndexes();
             loadHole();
         } catch (e) {
             updateSimApiSummary(`Imported but failed to reload geometry.\n${String(e)}`);
@@ -398,6 +429,10 @@ function toApiUrl(path) {
 
 function trimTrailingSlash(value) {
     return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+function normalizeAnalyticsBenchmarkMode(value) {
+    return String(value ?? '').toLowerCase() === 'target' ? 'target' : 'personal';
 }
 
 function buildClubNameIndex(rounds) {
@@ -486,6 +521,96 @@ function buildShotOutcomeIndex(rounds) {
     return { byClubId, byLie, all };
 }
 
+function buildStateBaselineIndex(rounds) {
+    const byLie = new Map();
+    const all = [];
+
+    for (const round of rounds ?? []) {
+        for (const holeRaw of round?.holes ?? []) {
+            const geometryStatus = inspectHoleGeometry(round, holeRaw);
+            const hole = maybeMirrorHoleShots(holeRaw, geometryStatus.holeGeometry);
+            const alignedGeometry = alignHoleGeometryToHole(geometryStatus.holeGeometry, hole).geometry;
+            const holeScore = Number(hole?.score);
+            if (!Number.isFinite(holeScore)) continue;
+
+            const orderedShots = [...(hole?.shots ?? [])]
+                .filter(s => Number.isFinite(Number(s?.shotNumber)))
+                .sort((a, b) => Number(a.shotNumber) - Number(b.shotNumber));
+
+            for (const shot of orderedShots) {
+                if (isPenaltyShot(shot)) continue;
+
+                const shotNumber = Number(shot?.shotNumber);
+                const startDistance = distanceToPinFromPoint(shot?.start, hole?.pin);
+                if (!Number.isFinite(shotNumber) || !Number.isFinite(startDistance)) continue;
+
+                const lie = shotNumber === 1
+                    ? 'tee'
+                    : inferApproachLie([Number(shot?.start?.x), Number(shot?.start?.z)], alignedGeometry);
+                const strokesToHoleOut = holeScore - shotNumber + 1;
+                if (!Number.isFinite(strokesToHoleOut) || strokesToHoleOut <= 0) continue;
+
+                const row = {
+                    startDistance,
+                    strokesToHoleOut,
+                    lie,
+                    clubId: Number(shot?.clubId)
+                };
+                all.push(row);
+                const lieRows = byLie.get(lie) ?? [];
+                lieRows.push(row);
+                byLie.set(lie, lieRows);
+            }
+        }
+    }
+
+    return { byLie, all };
+}
+
+function selectTargetBenchmarkRounds(rounds) {
+    const validRounds = [...(rounds ?? [])]
+        .filter(round => Number.isFinite(Number(round?.totalScore)))
+        .map(round => ({
+            round,
+            totalScore: Number(round.totalScore),
+            totalToPar: (round?.holes ?? []).reduce((total, hole) => {
+                const score = Number(hole?.score);
+                const par = Number(hole?.par);
+                return total + (Number.isFinite(score) && Number.isFinite(par) ? score - par : 0);
+            }, 0)
+        }))
+        .sort((a, b) => {
+            if (a.totalToPar !== b.totalToPar) return a.totalToPar - b.totalToPar;
+            if (a.totalScore !== b.totalScore) return a.totalScore - b.totalScore;
+            return String(a.round?.date ?? '').localeCompare(String(b.round?.date ?? ''));
+        });
+
+    if (validRounds.length === 0) {
+        return {
+            rounds: [],
+            roundCount: 0,
+            share: 0,
+            label: 'Target benchmark unavailable'
+        };
+    }
+
+    const desiredCount = validRounds.length >= 18
+        ? Math.max(6, Math.round(validRounds.length * 0.35))
+        : validRounds.length >= 10
+            ? Math.max(5, Math.round(validRounds.length * 0.4))
+            : Math.max(3, Math.ceil(validRounds.length * 0.5));
+    const roundCount = Math.min(validRounds.length, desiredCount);
+    const roundsSubset = validRounds.slice(0, roundCount).map(entry => entry.round);
+    const share = validRounds.length > 0 ? roundCount / validRounds.length : 0;
+
+    return {
+        rounds: roundsSubset,
+        roundCount,
+        share,
+        label: `Target benchmark (best ${Math.round(share * 100)}% rounds)`
+    };
+}
+
 function rebuildShotOutcomeIndex() {
     const shotOutcomeIndex = buildShotOutcomeIndex(vizData?.rounds ?? []);
     shotOutcomeIndexByClubId = shotOutcomeIndex.byClubId;
@@ -493,10 +618,28 @@ function rebuildShotOutcomeIndex() {
     shotOutcomeIndexAll = shotOutcomeIndex.all;
 }
 
+function rebuildDerivedIndexes() {
+    rebuildShotOutcomeIndex();
+    const allRounds = vizData?.rounds ?? [];
+    const stateBaselineIndex = buildStateBaselineIndex(allRounds);
+    stateBaselineIndexByLie = stateBaselineIndex.byLie;
+    stateBaselineAll = stateBaselineIndex.all;
+    const targetRounds = selectTargetBenchmarkRounds(allRounds);
+    const targetStateBaselineIndex = buildStateBaselineIndex(targetRounds.rounds);
+    targetBaselineIndexByLie = targetStateBaselineIndex.byLie;
+    targetBaselineAll = targetStateBaselineIndex.all;
+    targetBenchmarkInfo = {
+        roundCount: targetRounds.roundCount,
+        share: targetRounds.share,
+        label: targetRounds.label
+    };
+    teeDispersionIndexByClub = buildGlobalTeeDispersionIndex(allRounds);
+}
+
 function loadRound(idx) {
     currentRoundIdx = idx;
     selectedTeePlanClub = null;
-    plannerState = { club: null, aimOffsetMeters: 0 };
+    plannerState = { club: null, aimOffsetMeters: 0, manualAimPoint: null };
     setRoundSelection(idx);
     const round = vizData.rounds[currentRoundIdx];
     const holeCount = Array.isArray(round?.holes) ? round.holes.length : 0;
@@ -566,7 +709,7 @@ function replayExtremeHoleForCurrent(mode) {
     const chosen = candidates[0];
     spreadMode = false;
     selectedTeePlanClub = null;
-    plannerState = { club: null, aimOffsetMeters: 0 };
+    plannerState = { club: null, aimOffsetMeters: 0, manualAimPoint: null };
     analyticsDetailsVisible = false;
     setAnalyticsDetailsVisible(analyticsDetailsVisible);
     applyPanelVisibility();
@@ -603,12 +746,14 @@ function loadHole() {
         buildTeeClubDecisionStats(analysisSamples, fairwayPolygons),
         analyticsGeometry
     );
+    const plannerOptions = buildPlannerClubOptions(selectedHole, analysisSamples, teeOptions);
     selectedTeePlanClub = normalizeSelectedTeePlanClub(teeOptions, selectedTeePlanClub);
     currentTeeOptions = teeOptions;
-    plannerState = normalizePlannerState(teeOptions, plannerState, selectedTeePlanClub);
-    currentPlannerModel = buildWhatIfPlannerModel(selectedHole, analysisSamples, analyticsGeometry, teeOptions, plannerState);
+    currentPlannerOptions = plannerOptions;
+    plannerState = normalizePlannerState(plannerOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(selectedHole, analysisSamples, analyticsGeometry, plannerOptions, plannerState);
     const caddiePlanText = formatPreShotCaddiePlan(selectedHole, analysisSamples, analyticsGeometry, selectedTeePlanClub);
-    const plannerPanelText = formatWhatIfPlanner(selectedHole, teeOptions, currentPlannerModel);
+    const plannerPanelText = formatWhatIfPlanner(selectedHole, plannerOptions, currentPlannerModel);
     const analyticsSummaryText = formatHoleAnalyticsBasic(selectedHole, analysisSamples, analyticsGeometry);
     const analyticsDetailsText = formatHoleAnalytics(selectedHole, analysisSamples, analyticsGeometry);
     const holeForRender = getHoleForRender(renderReferenceHole, holeGeometry);
@@ -688,6 +833,14 @@ function refreshSpreadLayerVisuals() {
     setPlayIcon(false);
 }
 
+function refreshAnalyticsPanelOnly() {
+    if (!currentSelectedHole || !Array.isArray(currentAnalysisSamples)) return;
+    const analyticsSummaryText = formatHoleAnalyticsBasic(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry);
+    const analyticsDetailsText = formatHoleAnalytics(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry);
+    updateHoleAnalytics(analyticsSummaryText, analyticsDetailsText);
+    setAnalyticsDetailsVisible(analyticsDetailsVisible);
+}
+
 function refreshCaddieAndInsights() {
     if (!currentSelectedHole) return;
     const fairwayPolygons = asPolygonArrayFlexible(currentAnalysisGeometry?.fairway);
@@ -695,12 +848,14 @@ function refreshCaddieAndInsights() {
         buildTeeClubDecisionStats(currentAnalysisSamples, fairwayPolygons),
         currentAnalysisGeometry
     );
+    const plannerOptions = buildPlannerClubOptions(currentSelectedHole, currentAnalysisSamples, teeOptions);
     selectedTeePlanClub = normalizeSelectedTeePlanClub(teeOptions, selectedTeePlanClub);
     currentTeeOptions = teeOptions;
-    plannerState = normalizePlannerState(teeOptions, plannerState, selectedTeePlanClub);
-    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, teeOptions, plannerState);
+    currentPlannerOptions = plannerOptions;
+    plannerState = normalizePlannerState(plannerOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, plannerOptions, plannerState);
     updateCaddiePlan(formatPreShotCaddiePlan(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, selectedTeePlanClub));
-    updatePlannerPanel(formatWhatIfPlanner(currentSelectedHole, teeOptions, currentPlannerModel));
+    updatePlannerPanel(formatWhatIfPlanner(currentSelectedHole, plannerOptions, currentPlannerModel));
     if (spreadMode) {
         refreshSpreadLayerVisuals();
     }
@@ -708,9 +863,9 @@ function refreshCaddieAndInsights() {
 
 function refreshPlannerAndInsights() {
     if (!currentSelectedHole) return;
-    plannerState = normalizePlannerState(currentTeeOptions, plannerState, selectedTeePlanClub);
-    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, currentTeeOptions, plannerState);
-    updatePlannerPanel(formatWhatIfPlanner(currentSelectedHole, currentTeeOptions, currentPlannerModel));
+    plannerState = normalizePlannerState(currentPlannerOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, currentPlannerOptions, plannerState);
+    updatePlannerPanel(formatWhatIfPlanner(currentSelectedHole, currentPlannerOptions, currentPlannerModel));
     if (spreadMode) {
         refreshSpreadLayerVisuals();
     }
@@ -718,13 +873,60 @@ function refreshPlannerAndInsights() {
 
 function refreshPlannerOverlayPreview() {
     if (!currentSelectedHole) return;
-    plannerState = normalizePlannerState(currentTeeOptions, plannerState, selectedTeePlanClub);
-    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, currentTeeOptions, plannerState);
+    plannerState = normalizePlannerState(currentPlannerOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, currentPlannerOptions, plannerState);
     if (!spreadMode || !sceneCtx) return;
     clearTaggedSceneGroups(sceneCtx.scene, ['golf-planner-group']);
     if (panelVisibility.planner && currentPlannerModel) {
         buildPlannerOverlay(sceneCtx.scene, currentPlannerModel);
     }
+}
+
+function bindPlannerCanvasTargeting(canvas) {
+    if (!canvas) return;
+    let pointerDown = null;
+
+    canvas.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        pointerDown = {
+            pointerId: e.pointerId,
+            clientX: e.clientX,
+            clientY: e.clientY
+        };
+    });
+
+    canvas.addEventListener('pointerup', e => {
+        if (!pointerDown || e.pointerId !== pointerDown.pointerId) return;
+        const moved = Math.hypot(e.clientX - pointerDown.clientX, e.clientY - pointerDown.clientY);
+        pointerDown = null;
+        if (moved > 6) return;
+        if (!spreadMode || !panelVisibility.planner || !currentSelectedHole || isMainMenuVisible()) return;
+        const worldPoint = projectPointerToGround(canvas, e.clientX, e.clientY);
+        if (!worldPoint) return;
+        plannerState = {
+            ...plannerState,
+            aimOffsetMeters: 0,
+            manualAimPoint: worldPoint
+        };
+        refreshPlannerAndInsights();
+    });
+
+    canvas.addEventListener('pointercancel', () => {
+        pointerDown = null;
+    });
+}
+
+function projectPointerToGround(canvas, clientX, clientY) {
+    if (!sceneCtx?.camera || !canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    plannerRaycaster.setFromCamera(new THREE.Vector2(x, y), sceneCtx.camera);
+    const hit = new THREE.Vector3();
+    if (!plannerRaycaster.ray.intersectPlane(plannerGroundPlane, hit)) return null;
+    if (!Number.isFinite(hit.x) || !Number.isFinite(hit.z)) return null;
+    return [round2(hit.x), round2(hit.z)];
 }
 
 function startReplayFromSpreadView() {
@@ -1000,6 +1202,7 @@ function changeHole(delta) {
     if (newIdx >= 0 && newIdx < round.holes.length) {
         currentHoleIdx = newIdx;
         selectedTeePlanClub = null;
+        plannerState = { club: null, aimOffsetMeters: 0, manualAimPoint: null };
         loadHole();
     }
 }
@@ -1055,23 +1258,27 @@ function syncShotCamera(deltaTime, shot = null) {
 }
 
 function getHoleSamples(round, holeNumber, filters = { range: '20' }) {
-    const courseName = normalize(round.courseName);
-    let samples = (vizData.rounds ?? [])
-        .filter(r => normalize(r.courseName) === courseName)
+    return getCourseRounds(round, filters)
         .map(r => {
             const h = (r.holes ?? []).find(x => Number(x.holeNumber) === Number(holeNumber));
             return h ? { ...h, _roundDate: r.date } : null;
         })
-        .filter(h => !!h)
-        .sort((a, b) => String(b._roundDate).localeCompare(String(a._roundDate)));
+        .filter(h => !!h);
+}
+
+function getCourseRounds(round, filters = { range: '20' }) {
+    const courseName = normalize(round?.courseName);
+    let rounds = (vizData?.rounds ?? [])
+        .filter(r => normalize(r.courseName) === courseName)
+        .sort((a, b) => String(b?.date ?? '').localeCompare(String(a?.date ?? '')));
     const rangeN = String(filters?.range ?? '20');
     if (rangeN !== 'all') {
         const n = Number(rangeN);
         if (Number.isFinite(n) && n > 0) {
-            samples = samples.slice(0, n);
+            rounds = rounds.slice(0, n);
         }
     }
-    return samples;
+    return rounds;
 }
 
 function buildAggregateHoleForFrame(baseHole, samples) {
@@ -1109,8 +1316,10 @@ function averagePin(samples) {
 function formatHoleAnalytics(currentHole, samples, alignedGeometry = null) {
     const s = buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry);
     if (!s) return '<div class="analytics-muted">No samples found for this hole.</div>';
+    const courseLeakSnapshot = buildCourseLeakSnapshot(s.courseStrokesDashboard, s.roundStrokesDashboard);
 
     const confidenceBadges = renderAnalyticsBadgeRow([
+        ['Baseline', s.baselineInfo?.mode === 'target' ? 'Target' : 'Personal'],
         ['Score', s.confidence.score],
         ['Tee', s.confidence.teePlan],
         ['FIR', s.confidence.fir],
@@ -1121,7 +1330,8 @@ function formatHoleAnalytics(currentHole, samples, alignedGeometry = null) {
         '<div class="analytics-stack">',
         renderAnalyticsSection('Sample', [
             ['Window', `${s.dateSpan} (${s.rounds} rounds)`],
-            ['Normalized', `${s.normalizedCount}/${s.rounds} holes${s.mirroredCount > 0 ? ` | mirrored ${s.mirroredCount}` : ''}`]
+            ['Normalized', `${s.normalizedCount}/${s.rounds} holes${s.mirroredCount > 0 ? ` | mirrored ${s.mirroredCount}` : ''}`],
+            ['Baseline', s.baselineInfo?.label ?? 'My baseline']
         ], confidenceBadges),
         renderAnalyticsSection('Scoring', [
             ['This round', `${escapeHtml(String(currentHole.score))} (${escapeHtml(s.currentToParLabel)})`],
@@ -1149,6 +1359,20 @@ function formatHoleAnalytics(currentHole, samples, alignedGeometry = null) {
             ['Penalty split', s.penaltySummary.split],
             ['Penalty clubs', s.penaltySummary.byClub]
         ]),
+        courseLeakSnapshot ? renderAnalyticsSection('Course Leak Snapshot', [
+            { label: 'Main leak', html: courseLeakSnapshot.mainLeakHtml, valueClasses: 'analytics-row-value-emphasis' },
+            { label: 'Secondary', html: courseLeakSnapshot.secondaryLeakHtml },
+            { label: 'Best phase', html: courseLeakSnapshot.bestPhaseHtml },
+            { label: 'This round', html: courseLeakSnapshot.currentRoundHtml },
+            { label: 'Focus', html: courseLeakSnapshot.focusHtml }
+        ], courseLeakSnapshot.introHtml) : '',
+        s.strokesDashboard ? renderStrokesDashboardSection('Hole Strokes', s.strokesDashboard, {
+            baselineLabel: s.baselineInfo?.label ?? 'My baseline',
+            currentLabel: 'This hole',
+            averageLabel: 'Hole average',
+            sampleLabel: `${s.rounds} hole samples`
+        }) : '',
+        (s.roundStrokesDashboard || s.courseStrokesDashboard) ? renderRoundCourseDashboardSection(s.roundStrokesDashboard, s.courseStrokesDashboard, s.baselineInfo) : '',
         renderAnalyticsSection('Pattern And Plan', [
             ['Miss bias', s.lateral.text],
             ['Aim note', s.aimNote],
@@ -1161,6 +1385,18 @@ function formatHoleAnalytics(currentHole, samples, alignedGeometry = null) {
 function formatHoleAnalyticsBasic(currentHole, samples, alignedGeometry = null) {
     const s = buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry);
     if (!s) return '<div class="analytics-muted">No samples found for this hole.</div>';
+    const courseLeakSnapshot = buildCourseLeakSnapshot(s.courseStrokesDashboard, s.roundStrokesDashboard);
+
+    const strokesNote = s.strokesDashboard
+        ? [
+            renderAnalyticsInlineMetric('Baseline', escapeHtml(s.baselineInfo?.mode === 'target' ? 'Target benchmark' : 'My baseline')),
+            renderAnalyticsInlineMetric('Hole avg', renderAnalyticsDelta(s.strokesDashboard.average?.total)),
+            renderAnalyticsInlineMetric('Round total', renderAnalyticsDelta(s.roundStrokesDashboard?.current?.total)),
+            s.strokesDashboard.averageWorst
+                ? renderAnalyticsInlineMetric('Leak', `${escapeHtml(labelDashboardPhase(s.strokesDashboard.averageWorst.key))} ${renderAnalyticsDelta(s.strokesDashboard.averageWorst.value)}`)
+                : ''
+        ].filter(Boolean).join('')
+        : renderAnalyticsInlineMetric('Baseline', escapeHtml(s.baselineInfo?.label ?? 'My baseline'));
 
     return [
         '<div class="analytics-stack">',
@@ -1170,6 +1406,8 @@ function formatHoleAnalyticsBasic(currentHole, samples, alignedGeometry = null) 
         renderAnalyticsKpi('FIR', s.firCompact, formatTeeOptionCompact(s.primaryTeeOption)),
         renderAnalyticsKpi('GIR / Putts', `${s.girPct.toFixed(1)}%`, `${s.avgPutts.toFixed(2)} putts | 3-putt ${s.threePuttRate.toFixed(1)}%`),
         '</div>',
+        renderAnalyticsNote('Strokes Dashboard', `<div class="analytics-inline-grid">${strokesNote}</div>`),
+        courseLeakSnapshot ? renderAnalyticsNote('Course Leak Snapshot', courseLeakSnapshot.noteHtml) : '',
         renderAnalyticsNote('Miss Pattern', `${escapeHtml(s.lateral.text)}<br><span class="analytics-muted">${escapeHtml(s.aimNote)}</span>`),
         renderAnalyticsNote('Practice Focus', escapeHtml(s.practiceFocus)),
         '</div>'
@@ -1217,6 +1455,188 @@ function formatPreShotCaddiePlan(currentHole, samples, alignedGeometry = null, s
     ].join('');
 }
 
+function renderStrokesDashboardSection(title, dashboard, options = {}) {
+    if (!dashboard) return '';
+    const rows = [
+        { label: options.currentLabel ?? 'Current', html: renderAnalyticsDelta(dashboard.current?.total), valueClasses: 'analytics-row-value-emphasis' },
+        { label: options.averageLabel ?? 'Average', html: renderAnalyticsDelta(dashboard.average?.total), valueClasses: 'analytics-row-value-emphasis' },
+        { label: 'Tee', html: renderAnalyticsDeltaComparison(dashboard.current?.tee, dashboard.average?.tee) },
+        { label: 'Approach', html: renderAnalyticsDeltaComparison(dashboard.current?.approach, dashboard.average?.approach) },
+        { label: 'Short game', html: renderAnalyticsDeltaComparison(dashboard.current?.short, dashboard.average?.short) },
+        { label: 'Putting', html: renderAnalyticsDeltaComparison(dashboard.current?.putting, dashboard.average?.putting) },
+        { label: 'Penalties', html: renderAnalyticsDeltaComparison(dashboard.current?.penalties, dashboard.average?.penalties) },
+        {
+            label: 'Main leak',
+            html: dashboard.averageWorst
+                ? `${escapeHtml(labelDashboardPhase(dashboard.averageWorst.key))} ${renderAnalyticsDelta(dashboard.averageWorst.value)}`
+                : '<span class="analytics-muted">n/a</span>'
+        },
+        {
+            label: 'Best phase',
+            html: dashboard.averageBest
+                ? `${escapeHtml(labelDashboardPhase(dashboard.averageBest.key))} ${renderAnalyticsDelta(dashboard.averageBest.value)}`
+                : '<span class="analytics-muted">n/a</span>'
+        }
+    ];
+    const introBits = [
+        options.baselineLabel ? `<span>${escapeHtml(options.baselineLabel)}</span>` : '',
+        options.sampleLabel ? `<span>${escapeHtml(options.sampleLabel)}</span>` : ''
+    ].filter(Boolean);
+    const introHtml = introBits.length > 0
+        ? `<div class="analytics-section-intro">${introBits.join('<span class="analytics-section-intro-sep">|</span>')}</div>`
+        : '';
+    return renderAnalyticsSection(title, rows, introHtml);
+}
+
+function renderRoundCourseDashboardSection(roundDashboard, courseDashboard, baselineInfo) {
+    if (!roundDashboard && !courseDashboard) return '';
+    const rows = [
+        { label: 'Baseline', html: `<span class="analytics-muted">${escapeHtml(baselineInfo?.label ?? 'My baseline')}</span>` },
+        { label: 'This round', html: renderAnalyticsDelta(roundDashboard?.current?.total), valueClasses: 'analytics-row-value-emphasis' },
+        { label: 'Course avg', html: renderAnalyticsDelta(courseDashboard?.average?.total), valueClasses: 'analytics-row-value-emphasis' },
+        { label: 'Round tee', html: renderAnalyticsDelta(roundDashboard?.current?.tee) },
+        { label: 'Round approach', html: renderAnalyticsDelta(roundDashboard?.current?.approach) },
+        { label: 'Round short', html: renderAnalyticsDelta(roundDashboard?.current?.short) },
+        { label: 'Round putting', html: renderAnalyticsDelta(roundDashboard?.current?.putting) },
+        { label: 'Course tee', html: renderAnalyticsDelta(courseDashboard?.average?.tee) },
+        { label: 'Course approach', html: renderAnalyticsDelta(courseDashboard?.average?.approach) },
+        { label: 'Course short', html: renderAnalyticsDelta(courseDashboard?.average?.short) },
+        { label: 'Course putting', html: renderAnalyticsDelta(courseDashboard?.average?.putting) },
+        {
+            label: 'Course leak',
+            html: courseDashboard?.averageWorst
+                ? `${escapeHtml(labelDashboardPhase(courseDashboard.averageWorst.key))} ${renderAnalyticsDelta(courseDashboard.averageWorst.value)}`
+                : '<span class="analytics-muted">n/a</span>'
+        }
+    ];
+    const introBits = [
+        roundDashboard?.holes ? `<span>${escapeHtml(String(roundDashboard.holes))} holes in this round</span>` : '',
+        courseDashboard?.rounds ? `<span>${escapeHtml(String(courseDashboard.rounds))} course rounds</span>` : '',
+        courseDashboard?.dateSpan ? `<span>${escapeHtml(courseDashboard.dateSpan)}</span>` : ''
+    ].filter(Boolean);
+    const introHtml = introBits.length > 0
+        ? `<div class="analytics-section-intro">${introBits.join('<span class="analytics-section-intro-sep">|</span>')}</div>`
+        : '';
+    return renderAnalyticsSection('Round And Course', rows, introHtml);
+}
+
+function renderAnalyticsInlineMetric(label, valueHtml) {
+    return [
+        '<div class="analytics-inline-metric">',
+        `<span class="analytics-inline-metric-label">${escapeHtml(label)}</span>`,
+        `<span class="analytics-inline-metric-value">${valueHtml}</span>`,
+        '</div>'
+    ].join('');
+}
+
+function renderAnalyticsDeltaComparison(currentValue, averageValue) {
+    const parts = [];
+    if (Number.isFinite(currentValue)) {
+        parts.push(`<span class="analytics-delta-pair-item"><span class="analytics-delta-pair-label">Now</span>${renderAnalyticsDelta(currentValue)}</span>`);
+    }
+    if (Number.isFinite(averageValue)) {
+        parts.push(`<span class="analytics-delta-pair-item"><span class="analytics-delta-pair-label">Avg</span>${renderAnalyticsDelta(averageValue)}</span>`);
+    }
+    return parts.length > 0 ? `<span class="analytics-delta-pair">${parts.join('<span class="analytics-delta-pair-sep"></span>')}</span>` : '<span class="analytics-muted">n/a</span>';
+}
+
+function renderAnalyticsDelta(value, decimals = 2) {
+    if (!Number.isFinite(value)) return '<span class="analytics-muted">n/a</span>';
+    const tone = value > 0.01 ? 'gained' : value < -0.01 ? 'lost' : 'even';
+    return `<span class="analytics-delta analytics-delta-${tone}">${escapeHtml(formatBaselineDelta(value, decimals))}</span>`;
+}
+
+function buildCourseLeakSnapshot(courseDashboard, roundDashboard) {
+    const average = courseDashboard?.average;
+    if (!average) return null;
+
+    const ranked = rankDashboardPhases(average, true);
+    const leakPhases = ranked.filter(phase => Number.isFinite(phase.value) && phase.value < -0.01);
+    const gainPhases = ranked
+        .filter(phase => Number.isFinite(phase.value) && phase.value > 0.01)
+        .sort((a, b) => b.value - a.value);
+    const mainLeak = leakPhases[0] ?? null;
+    const secondaryLeak = leakPhases[1] ?? null;
+    const bestPhase = gainPhases[0] ?? findBestBreakdownPhase(average);
+    const currentWorst = findWorstBreakdownPhase(roundDashboard?.current);
+
+    const introBits = [
+        courseDashboard?.rounds ? `<span>${escapeHtml(String(courseDashboard.rounds))} course rounds</span>` : '',
+        courseDashboard?.dateSpan ? `<span>${escapeHtml(courseDashboard.dateSpan)}</span>` : ''
+    ].filter(Boolean);
+    const introHtml = introBits.length > 0
+        ? `<div class="analytics-section-intro">${introBits.join('<span class="analytics-section-intro-sep">|</span>')}</div>`
+        : '';
+
+    const mainLeakHtml = mainLeak
+        ? `${escapeHtml(labelDashboardPhase(mainLeak.key))} ${renderAnalyticsDelta(mainLeak.value)}`
+        : '<span class="analytics-muted">No clear course-wide leak yet</span>';
+    const secondaryLeakHtml = secondaryLeak
+        ? `${escapeHtml(labelDashboardPhase(secondaryLeak.key))} ${renderAnalyticsDelta(secondaryLeak.value)}`
+        : '<span class="analytics-muted">No second clear leak</span>';
+    const bestPhaseHtml = bestPhase
+        ? `${escapeHtml(labelDashboardPhase(bestPhase.key))} ${renderAnalyticsDelta(bestPhase.value)}`
+        : '<span class="analytics-muted">n/a</span>';
+    const currentRoundHtml = currentWorst
+        ? `${escapeHtml(labelDashboardPhase(currentWorst.key))} ${renderAnalyticsDelta(currentWorst.value)}`
+        : '<span class="analytics-muted">Round trend building</span>';
+    const focusText = buildCourseLeakFocus(mainLeak, secondaryLeak, currentWorst);
+    const focusHtml = escapeHtml(focusText);
+    const noteHtml = [
+        '<div class="analytics-inline-grid">',
+        renderAnalyticsInlineMetric('Main leak', mainLeakHtml),
+        renderAnalyticsInlineMetric('This round', currentRoundHtml),
+        renderAnalyticsInlineMetric('Focus', focusHtml),
+        '</div>'
+    ].join('');
+
+    return {
+        introHtml,
+        mainLeakHtml,
+        secondaryLeakHtml,
+        bestPhaseHtml,
+        currentRoundHtml,
+        focusHtml,
+        noteHtml
+    };
+}
+
+function buildCourseLeakFocus(mainLeak, secondaryLeak, currentWorst) {
+    if (!mainLeak) {
+        return 'No single phase is separating from the rest yet. Keep logging rounds so the course trend sharpens.';
+    }
+
+    const phaseName = labelDashboardPhase(mainLeak.key);
+    const roundMatches = currentWorst?.key && currentWorst.key === mainLeak.key;
+
+    if (mainLeak.key === 'penalties') {
+        return roundMatches
+            ? 'Penalty management is the clearest scoring win here, and this round is following the same pattern.'
+            : 'Penalty management is the clearest scoring win here. Keep the next tee plan biased away from the danger side.';
+    }
+
+    if (secondaryLeak?.key === 'penalties') {
+        return `${phaseName} is costing the most, with penalties as the backup leak. Clean strike pattern first, then take risk off the miss side.`;
+    }
+
+    if (roundMatches) {
+        return `${phaseName} is the course-wide leak and it is showing up again this round. That is the first phase to attack in practice and strategy.`;
+    }
+
+    return `${phaseName} is the biggest course-wide leak right now. Prioritize decisions that give you easier ${phaseName.toLowerCase()} shots on this course.`;
+}
+
+function rankDashboardPhases(row, includePenalties = false) {
+    if (!row) return [];
+    const keys = includePenalties
+        ? ['tee', 'approach', 'short', 'putting', 'penalties']
+        : ['tee', 'approach', 'short', 'putting'];
+    return keys
+        .map(key => ({ key, value: Number(row?.[key]) }))
+        .filter(entry => Number.isFinite(entry.value))
+        .sort((a, b) => a.value - b.value);
+}
+
 function renderAnalyticsKpi(label, value, sub = '') {
     return [
         '<div class="analytics-kpi">',
@@ -1242,17 +1662,31 @@ function renderAnalyticsSection(title, rows, prefixHtml = '') {
         `<div class="analytics-section-title">${escapeHtml(title)}</div>`,
         prefixHtml || '',
         '<div class="analytics-row-list">',
-        rows.map(([label, value]) => renderAnalyticsRow(label, value)).join(''),
+        rows.map(entry => renderAnalyticsRow(entry)).join(''),
         '</div>',
         '</section>'
     ].join('');
 }
 
-function renderAnalyticsRow(label, value) {
+function renderAnalyticsRow(entry, value = undefined) {
+    const row = Array.isArray(entry)
+        ? {
+            label: entry[0],
+            value: entry[1]
+        }
+        : typeof entry === 'object' && entry !== null
+            ? entry
+            : { label: entry, value };
+    const label = row.label ?? '-';
+    const valueHtml = typeof row.html === 'string'
+        ? row.html
+        : escapeHtml(String(row.value ?? '-'));
+    const rowClasses = row.rowClasses ? ` ${row.rowClasses}` : '';
+    const valueClasses = row.valueClasses ? ` ${row.valueClasses}` : '';
     return [
-        '<div class="analytics-row">',
+        `<div class="analytics-row${rowClasses}">`,
         `<div class="analytics-row-label">${escapeHtml(label)}</div>`,
-        `<div class="analytics-row-value">${escapeHtml(String(value ?? '-'))}</div>`,
+        `<div class="analytics-row-value${valueClasses}">${valueHtml}</div>`,
         '</div>'
     ].join('');
 }
@@ -1328,11 +1762,18 @@ function formatWhatIfPlanner(currentHole, teeOptions, plannerModel) {
         return '<div class="planner-note">No tee-shot history yet for this hole. Play a few rounds to unlock the planner.</div>';
     }
 
-    const primary = choosePrimaryTeeOption(teeOptions);
+    const primary = choosePrimaryTeeOption(currentTeeOptions?.length ? currentTeeOptions : teeOptions);
     const selectedClub = plannerModel?.selectedOption?.club ?? plannerState.club ?? primary?.club ?? teeOptions[0]?.club ?? '';
     const aimOffset = Number.isFinite(plannerModel?.aimOffsetMeters) ? plannerModel.aimOffsetMeters : (Number(plannerState.aimOffsetMeters) || 0);
+    const manualAim = !!plannerModel?.manualAim || (Array.isArray(plannerState.manualAimPoint) && plannerState.manualAimPoint.length >= 2);
     const clubOptions = teeOptions
-        .map(option => `<option value="${escapeHtml(option.club)}"${normalize(option.club) === normalize(selectedClub) ? ' selected' : ''}>${escapeHtml(option.club)} (${escapeHtml(option.confidence)} | n=${option.n})</option>`)
+        .map(option => {
+            const label = option.plannerLabel
+                ?? (option.dispersionSource === 'general'
+                    ? `General shape n=${option.dispersionN ?? option.n ?? 0}`
+                    : `${option.confidence ?? 'Hole'} | n=${option.n ?? 0}`);
+            return `<option value="${escapeHtml(option.club)}"${normalize(option.club) === normalize(selectedClub) ? ' selected' : ''}>${escapeHtml(option.club)} (${escapeHtml(label)})</option>`;
+        })
         .join('');
 
     const controls = [
@@ -1347,7 +1788,9 @@ function formatWhatIfPlanner(currentHole, teeOptions, plannerModel) {
         `<input type="range" min="-24" max="24" step="1" value="${escapeHtml(String(Math.round(aimOffset)))}" data-planner-aim />`,
         `<div class="planner-slider-meta"><span data-planner-aim-label>${formatAimOffsetLabel(aimOffset)}</span><span>Adjust target line left / right</span></div>`,
         '</div>',
-        '</div>'
+        '</div>',
+        `<div class="planner-note">${manualAim ? 'Custom target active. Click elsewhere on the hole to move it.' : 'Click on the hole to place a custom target.'}</div>`,
+        manualAim ? '<button type="button" class="planner-reset-btn" data-planner-reset>Use suggested target</button>' : ''
     ];
 
     if (!plannerModel) {
@@ -1370,12 +1813,16 @@ function formatWhatIfPlanner(currentHole, teeOptions, plannerModel) {
     const approachOutlook = formatApproachPreviewOutlook(plannerModel.approachPreview);
     const chainPreview = formatApproachChainPreview(plannerModel.syntheticOption, plannerModel.approachPlan, plannerModel.approachPreview);
     const comparison = formatPlannerComparison(plannerModel, primary);
+    const dispersionText = plannerModel.teeStats?.source === 'general'
+        ? `General club shape (n=${plannerModel.teeStats?.n ?? 0})`
+        : `Hole-specific shape (n=${plannerModel.teeStats?.n ?? 0})`;
 
     controls.push(
         '<div class="planner-summary">',
         '<div class="planner-summary-card">',
         '<div class="planner-summary-title">Planner Preview</div>',
         '<div class="planner-row-list">',
+        renderPlannerRow('Dispersion source', dispersionText),
         renderPlannerRow('Modeled score', modeledScoreText),
         renderPlannerRow('Landing pattern', landingPattern || 'Pattern building'),
         renderPlannerRow('Predicted leave', leaveText),
@@ -1442,7 +1889,7 @@ function formatPlannerComparison(model, primaryOption) {
 
 function normalizePlannerState(teeOptions, state, preferredClub = null) {
     const fallbackClub = preferredClub
-        ?? choosePrimaryTeeOption(teeOptions)?.club
+        ?? choosePrimaryTeeOption(currentTeeOptions?.length ? currentTeeOptions : teeOptions)?.club
         ?? teeOptions?.[0]?.club
         ?? null;
     const club = resolveTeePlanOption(teeOptions, state?.club)?.club
@@ -1450,7 +1897,10 @@ function normalizePlannerState(teeOptions, state, preferredClub = null) {
         ?? fallbackClub;
     return {
         club,
-        aimOffsetMeters: clamp(Number(state?.aimOffsetMeters) || 0, -24, 24)
+        aimOffsetMeters: clamp(Number(state?.aimOffsetMeters) || 0, -24, 24),
+        manualAimPoint: Array.isArray(state?.manualAimPoint) && state.manualAimPoint.length >= 2
+            ? [Number(state.manualAimPoint[0]), Number(state.manualAimPoint[1])]
+            : null
     };
 }
 
@@ -1472,19 +1922,33 @@ function buildWhatIfPlannerModel(referenceHole, samples, alignedGeometry, teeOpt
     const uz = vz / pinLen;
     const lx = -uz;
     const lz = ux;
-    const primaryOption = choosePrimaryTeeOption(teeOptions);
+    const primaryOption = choosePrimaryTeeOption(currentTeeOptions?.length ? currentTeeOptions : teeOptions);
     const selectedOption = resolveTeePlanOption(teeOptions, state?.club) ?? primaryOption ?? teeOptions[0];
-    const teeStats = buildTeeShotShapeStats(referenceHole, samples, selectedOption?.club);
+    let teeStats = resolvePlannerTeeShapeStats(referenceHole, samples, selectedOption);
     if (!selectedOption || !teeStats) return null;
+    if ((!teeStats || teeStats.n < 2) && samples.length > 0) {
+        teeStats = buildTeeShotShapeStats(referenceHole, samples, null);
+    }
+    if (!teeStats) return null;
 
     const fairwayPolygons = asPolygonArrayFlexible(alignedGeometry?.fairway);
     const defaultAimPoint = findFairwayAimPoint(fairwayPolygons, tee, [ux, uz], [lx, lz], teeStats.meanAlong) ?? teeStats.centerlinePoint;
     const defaultAimLocal = defaultAimPoint ? projectWorldToLocal(tee, [ux, uz], [lx, lz], defaultAimPoint) : { along: teeStats.meanAlong, lateral: 0 };
-    const aimAlong = Number.isFinite(defaultAimLocal?.along) ? defaultAimLocal.along : teeStats.meanAlong;
-    const aimBaseLateral = Number.isFinite(defaultAimLocal?.lateral) ? defaultAimLocal.lateral : 0;
+    const manualAimPoint = Array.isArray(state?.manualAimPoint) && state.manualAimPoint.length >= 2
+        ? [Number(state.manualAimPoint[0]), Number(state.manualAimPoint[1])]
+        : null;
+    const manualAimLocal = manualAimPoint && manualAimPoint.every(Number.isFinite)
+        ? projectWorldToLocal(tee, [ux, uz], [lx, lz], manualAimPoint)
+        : null;
+    const baseAimAlong = manualAimLocal && Number.isFinite(manualAimLocal.along)
+        ? clamp(manualAimLocal.along, 12, pinLen * 1.02)
+        : (Number.isFinite(defaultAimLocal?.along) ? defaultAimLocal.along : teeStats.meanAlong);
+    const baseAimLateral = manualAimLocal && Number.isFinite(manualAimLocal.lateral)
+        ? manualAimLocal.lateral
+        : (Number.isFinite(defaultAimLocal?.lateral) ? defaultAimLocal.lateral : 0);
     const aimOffsetMeters = clamp(Number(state?.aimOffsetMeters) || 0, -24, 24);
-    const targetAimLateral = aimBaseLateral + aimOffsetMeters;
-    const aimPoint = projectLocalToWorld(tee, [ux, uz], [lx, lz], aimAlong, targetAimLateral);
+    const targetAimLateral = baseAimLateral + aimOffsetMeters;
+    const aimPoint = projectLocalToWorld(tee, [ux, uz], [lx, lz], baseAimAlong, targetAimLateral);
     const meanLanding = projectLocalToWorld(tee, [ux, uz], [lx, lz], teeStats.meanAlong, targetAimLateral + teeStats.meanLateral);
     const simulation = simulatePlannerLandingStats(referenceHole, alignedGeometry, teeStats, targetAimLateral, [ux, uz], [lx, lz]);
     const leaveDistance = Number.isFinite(simulation?.avgLeaveDistance)
@@ -1513,6 +1977,7 @@ function buildWhatIfPlannerModel(referenceHole, samples, alignedGeometry, teeOpt
         primaryOption,
         teeStats,
         aimOffsetMeters,
+        manualAim: !!manualAimLocal,
         aimPoint,
         meanLanding,
         targetAimLateral,
@@ -1813,8 +2278,132 @@ function buildTeeShotShapeStats(referenceHole, samples, club = null) {
         stdAlong: stddev(alongVals, meanAlong),
         stdLateral: stddev(lateralVals, meanLateral),
         centerlinePoint: projectLocalToWorld(tee, [ux, uz], [lx, lz], meanAlong, 0),
-        meanEnd: projectLocalToWorld(tee, [ux, uz], [lx, lz], meanAlong, meanLateral)
+        meanEnd: projectLocalToWorld(tee, [ux, uz], [lx, lz], meanAlong, meanLateral),
+        source: 'hole'
     };
+}
+
+function buildGlobalTeeDispersionIndex(rounds) {
+    const rowsByClub = new Map();
+
+    for (const round of rounds ?? []) {
+        for (const holeRaw of round?.holes ?? []) {
+            const geometryStatus = inspectHoleGeometry(round, holeRaw);
+            const hole = maybeMirrorHoleShots(holeRaw, geometryStatus.holeGeometry);
+            const tee = getHoleTee(hole);
+            const pin = getHolePin(hole);
+            if (!tee || !pin) continue;
+
+            const vx = pin[0] - tee[0];
+            const vz = pin[1] - tee[1];
+            const pinLen = Math.hypot(vx, vz);
+            if (pinLen < 1e-6) continue;
+            const ux = vx / pinLen;
+            const uz = vz / pinLen;
+            const lx = -uz;
+            const lz = ux;
+
+            const teeShot = (hole.shots ?? []).find(s => Number(s.shotNumber) === 1 && Number(s.clubId) !== 13 && !isPenaltyShot(s));
+            if (!teeShot) continue;
+
+            const club = resolveClubName(teeShot);
+            const key = normalize(club);
+            if (!key) continue;
+            const ex = Number(teeShot.end?.x);
+            const ez = Number(teeShot.end?.z);
+            if (!Number.isFinite(ex) || !Number.isFinite(ez)) continue;
+
+            const rx = ex - tee[0];
+            const rz = ez - tee[1];
+            const along = rx * ux + rz * uz;
+            const lateral = rx * lx + rz * lz;
+            const row = rowsByClub.get(key) ?? {
+                club,
+                alongVals: [],
+                lateralVals: [],
+                teeDistances: [],
+                holes: 0,
+                penaltyHoles: 0,
+                penaltyShots: 0
+            };
+
+            row.alongVals.push(along);
+            row.lateralVals.push(lateral);
+            const teeDistance = Number(teeShot.distance);
+            if (Number.isFinite(teeDistance)) {
+                row.teeDistances.push(teeDistance);
+            }
+            row.holes++;
+            const penaltyCount = countPenalties(hole.shots ?? []);
+            if (penaltyCount > 0) row.penaltyHoles++;
+            row.penaltyShots += penaltyCount;
+            rowsByClub.set(key, row);
+        }
+    }
+
+    const summary = new Map();
+    for (const [key, row] of rowsByClub.entries()) {
+        if (row.alongVals.length === 0) continue;
+        const meanAlong = avg(row.alongVals);
+        const meanLateral = avg(row.lateralVals);
+        summary.set(key, {
+            club: row.club,
+            n: row.alongVals.length,
+            meanAlong,
+            meanLateral,
+            stdAlong: stddev(row.alongVals, meanAlong),
+            stdLateral: stddev(row.lateralVals, meanLateral),
+            avgTeeDistance: row.teeDistances.length > 0 ? avg(row.teeDistances) : null,
+            penaltyHoleRate: row.holes > 0 ? row.penaltyHoles / row.holes : 0,
+            penaltyHoleRateAdj: row.holes > 0 ? (row.penaltyHoles + 1) / (row.holes + 2) : 0.25,
+            penaltyShotRate: row.holes > 0 ? row.penaltyShots / row.holes : 0,
+            source: 'general'
+        });
+    }
+    return summary;
+}
+
+function buildReferenceTeeShapeStats(referenceHole, aggregate, clubOverride = null, source = null) {
+    if (!aggregate) return null;
+    const tee = getHoleTee(referenceHole);
+    const pin = getHolePin(referenceHole);
+    if (!tee || !pin) return null;
+
+    const vx = pin[0] - tee[0];
+    const vz = pin[1] - tee[1];
+    const pinLen = Math.hypot(vx, vz);
+    if (pinLen < 1e-6) return null;
+    const ux = vx / pinLen;
+    const uz = vz / pinLen;
+    const lx = -uz;
+    const lz = ux;
+    const meanAlong = Number(aggregate.meanAlong);
+    const meanLateral = Number(aggregate.meanLateral);
+    if (!Number.isFinite(meanAlong) || !Number.isFinite(meanLateral)) return null;
+
+    return {
+        club: clubOverride ?? aggregate.club ?? null,
+        n: Number(aggregate.n) || 0,
+        meanAlong,
+        meanLateral,
+        stdAlong: Math.max(4, Number(aggregate.stdAlong) || 0),
+        stdLateral: Math.max(3, Number(aggregate.stdLateral) || 0),
+        centerlinePoint: projectLocalToWorld(tee, [ux, uz], [lx, lz], meanAlong, 0),
+        meanEnd: projectLocalToWorld(tee, [ux, uz], [lx, lz], meanAlong, meanLateral),
+        source: source ?? aggregate.source ?? 'general'
+    };
+}
+
+function resolvePlannerTeeShapeStats(referenceHole, samples, option) {
+    if (!referenceHole || !option) return null;
+    if (option.plannerDispersion) {
+        return buildReferenceTeeShapeStats(referenceHole, option.plannerDispersion, option.club, option.dispersionSource);
+    }
+    const holeStats = buildTeeShotShapeStats(referenceHole, samples, option.club);
+    if (holeStats) return holeStats;
+    const globalStats = teeDispersionIndexByClub.get(normalize(option.club));
+    if (!globalStats) return null;
+    return buildReferenceTeeShapeStats(referenceHole, globalStats, option.club, 'general');
 }
 
 function findFairwayAimPoint(polygons, tee, unitForward, unitLateral, targetAlong) {
@@ -2104,6 +2693,9 @@ function buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry = null)
     const scoreByTeeClub = buildScoreByTeeClub(samples);
     const teeClubUsage = buildTeeClubUsage(samples);
     const penaltySummary = buildPenaltySummary(samples);
+    const strokesDashboard = buildStrokesDashboard(currentHole, samples, alignedGeometry);
+    const roundStrokesDashboard = buildRoundStrokesDashboard(vizData?.rounds?.[currentRoundIdx] ?? null);
+    const courseStrokesDashboard = buildCourseStrokesDashboard(vizData?.rounds?.[currentRoundIdx] ?? null, spreadFilters);
     const teeOptions = enrichTeeOptionsForDecision(
         buildTeeClubDecisionStats(samples, fairwayPolygons),
         alignedGeometry
@@ -2148,6 +2740,9 @@ function buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry = null)
         scoreByTeeClub,
         teeClubUsage,
         penaltySummary,
+        strokesDashboard,
+        roundStrokesDashboard,
+        courseStrokesDashboard,
         teeOptions,
         primaryTeeOption,
         conservativeTeeOption,
@@ -2155,7 +2750,8 @@ function buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry = null)
         aimNote,
         currentToParLabel,
         confidence,
-        practiceFocus
+        practiceFocus,
+        baselineInfo: getCurrentBaselineInfo()
     };
 }
 
@@ -2576,6 +3172,75 @@ function buildTeeClubDecisionStats(samples, fairwayPolygons) {
             confidence: formatConfidenceBadge(row.n, { high: 8, medium: 4 }),
             note: noteParts.join(' | ')
         };
+    });
+}
+
+function buildPlannerClubOptions(referenceHole, samples, holeTeeOptions) {
+    const validScores = (samples ?? [])
+        .map(h => Number(h?.score))
+        .filter(Number.isFinite);
+    const holePar = avg((samples ?? []).map(h => Number(h?.par))) || Number(referenceHole?.par) || 0;
+    const holeAvgScore = validScores.length > 0 ? avg(validScores) : holePar + 1;
+    const holeAvgPutts = avg((samples ?? []).map(h => countPutts(h?.shots ?? []))) || null;
+    const merged = new Map();
+
+    for (const option of holeTeeOptions ?? []) {
+        const key = normalize(option?.club);
+        if (!key) continue;
+        const globalDispersion = teeDispersionIndexByClub.get(key) ?? null;
+        merged.set(key, {
+            ...option,
+            dispersionSource: globalDispersion ? 'general' : 'hole',
+            dispersionN: globalDispersion?.n ?? option.n,
+            plannerDispersion: globalDispersion,
+            plannerLabel: globalDispersion
+                ? `General shape n=${globalDispersion.n}${option.n > 0 ? ` | hole n=${option.n}` : ''}`
+                : `Hole shape n=${option.n}`
+        });
+    }
+
+    for (const [key, dispersion] of teeDispersionIndexByClub.entries()) {
+        if (merged.has(key)) continue;
+        const noteParts = ['general tee shape'];
+        if (Number.isFinite(dispersion.avgTeeDistance)) {
+            noteParts.push(`lands ~${dispersion.avgTeeDistance.toFixed(0)} yds`);
+        }
+        merged.set(key, {
+            club: dispersion.club,
+            n: 0,
+            avgScore: holeAvgScore,
+            avgToPar: holeAvgScore - holePar,
+            adjustedExpectedScore: holeAvgScore,
+            adjustedToPar: holeAvgScore - holePar,
+            firRate: null,
+            firRateAdj: null,
+            penaltyHoleRate: dispersion.penaltyHoleRate,
+            penaltyHoleRateAdj: dispersion.penaltyHoleRateAdj,
+            penaltyShotRate: dispersion.penaltyShotRate,
+            avgPutts: holeAvgPutts,
+            avgTeeDistance: dispersion.avgTeeDistance,
+            leaveDistance: null,
+            meanEndPoint: null,
+            historicalNextClub: null,
+            historicalNextClubShare: 0,
+            avgNextShotDistance: null,
+            primaryScore: holeAvgScore + dispersion.penaltyHoleRateAdj * 0.18,
+            conservativeScore: holeAvgScore + dispersion.penaltyHoleRateAdj * 0.42 + 0.08,
+            confidence: formatConfidenceBadge(dispersion.n, { high: 12, medium: 5 }),
+            note: noteParts.join(' | '),
+            dispersionSource: 'general',
+            dispersionN: dispersion.n,
+            plannerDispersion: dispersion,
+            plannerLabel: `General shape n=${dispersion.n}`,
+            plannerOnly: true
+        });
+    }
+
+    return [...merged.values()].sort((a, b) => {
+        const distA = Number.isFinite(a?.avgTeeDistance) ? Number(a.avgTeeDistance) : -1;
+        const distB = Number.isFinite(b?.avgTeeDistance) ? Number(b.avgTeeDistance) : -1;
+        if (distA !== distB) return distB - distA;
+        return String(a?.club ?? '').localeCompare(String(b?.club ?? ''));
     });
 }
 
@@ -3090,6 +3755,75 @@ function estimateRemainingStrokesAfterShot(rows, targetDistanceYards, lie = null
     };
 }
 
+function getBaselineProfile(mode = analyticsBenchmarkMode) {
+    const normalizedMode = normalizeAnalyticsBenchmarkMode(mode);
+    const targetUsable = targetBenchmarkInfo.roundCount >= 3 && targetBaselineAll.length >= 30;
+    if (normalizedMode === 'target' && targetUsable) {
+        return {
+            mode: 'target',
+            label: `${targetBenchmarkInfo.label} | n=${targetBenchmarkInfo.roundCount}`,
+            byLie: targetBaselineIndexByLie,
+            all: targetBaselineAll
+        };
+    }
+    if (normalizedMode === 'target' && !targetUsable) {
+        return {
+            mode: 'personal',
+            label: 'My baseline (target sample too thin)',
+            byLie: stateBaselineIndexByLie,
+            all: stateBaselineAll
+        };
+    }
+    return {
+        mode: 'personal',
+        label: 'My baseline',
+        byLie: stateBaselineIndexByLie,
+        all: stateBaselineAll
+    };
+}
+
+function getCurrentBaselineInfo() {
+    return getBaselineProfile(analyticsBenchmarkMode);
+}
+
+function estimateStrokesToHoleOut(distanceYards, lie = null, mode = analyticsBenchmarkMode) {
+    if (!Number.isFinite(distanceYards)) return null;
+    const profile = getBaselineProfile(mode);
+    const normalizedLie = normalize(lie);
+    const lieRows = normalizedLie ? (profile.byLie.get(normalizedLie) ?? []) : [];
+    const rows = lieRows.length >= 10 ? lieRows : profile.all;
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+
+    const nearest = rows
+        .map(row => ({
+            ...row,
+            diff: Math.abs(row.startDistance - distanceYards)
+        }))
+        .sort((a, b) => {
+            if (a.diff !== b.diff) return a.diff - b.diff;
+            const aLie = normalizedLie && normalize(a.lie) === normalizedLie ? 0 : 1;
+            const bLie = normalizedLie && normalize(b.lie) === normalizedLie ? 0 : 1;
+            return aLie - bLie;
+        })
+        .slice(0, Math.min(50, rows.length));
+
+    if (nearest.length === 0) return null;
+
+    const closeBand = nearest.some(r => r.diff <= 8) ? 12 : nearest.some(r => r.diff <= 20) ? 24 : 45;
+    const pool = nearest.filter(r => r.diff <= closeBand);
+    const use = pool.length >= 8 ? pool : nearest.slice(0, Math.min(22, nearest.length));
+
+    let sum = 0;
+    let weightSum = 0;
+    for (const row of use) {
+        const weight = 1 / Math.max(3, row.diff + 3);
+        sum += row.strokesToHoleOut * weight;
+        weightSum += weight;
+    }
+    if (weightSum <= 0) return null;
+    return sum / weightSum;
+}
+
 function blendContinuationEstimates(stateEstimate, clubEstimate) {
     if (!stateEstimate && !clubEstimate) return null;
     if (!stateEstimate) return clubEstimate;
@@ -3218,6 +3952,259 @@ function buildPenaltySummary(samples) {
         split: `Tee ${tee} | Long ${longGame} | Short ${shortGame} | Green ${green}`,
         byClub: byClubText || 'unknown'
     };
+}
+
+function buildStrokesDashboard(currentHole, samples, alignedGeometry = null) {
+    const current = computeHoleBaselineBreakdown(currentHole, alignedGeometry);
+    const sampleBreakdowns = (samples ?? [])
+        .map(h => computeHoleBaselineBreakdown(h, alignedGeometry))
+        .filter(Boolean);
+
+    if (!current && sampleBreakdowns.length === 0) return null;
+
+    const average = averageBreakdownRows(sampleBreakdowns);
+    const currentWorst = findWorstBreakdownPhase(current);
+    const averageWorst = findWorstBreakdownPhase(average);
+    const averageBest = findBestBreakdownPhase(average);
+
+    return {
+        current,
+        average,
+        currentWorst,
+        averageWorst,
+        averageBest
+    };
+}
+
+function buildRoundStrokesDashboard(round) {
+    const current = computeRoundBaselineBreakdown(round);
+    if (!current) return null;
+    return {
+        current,
+        currentWorst: findWorstBreakdownPhase(current),
+        currentBest: findBestBreakdownPhase(current),
+        holes: Number(current?.holeCount) || Number(round?.holes?.length) || 0
+    };
+}
+
+function buildCourseStrokesDashboard(round, filters = { range: 'all' }) {
+    if (!round) return null;
+    const rounds = getCourseRounds(round, filters);
+    const breakdowns = rounds
+        .map(candidate => computeRoundBaselineBreakdown(candidate))
+        .filter(Boolean);
+    if (breakdowns.length === 0) return null;
+
+    const average = averageBreakdownRows(breakdowns);
+    return {
+        average,
+        averageWorst: findWorstBreakdownPhase(average),
+        averageBest: findBestBreakdownPhase(average),
+        rounds: breakdowns.length,
+        dateSpan: buildRoundDateSpan(rounds)
+    };
+}
+
+function computeRoundBaselineBreakdown(round) {
+    if (!round) return null;
+    const holeRows = [];
+    for (const holeRaw of round?.holes ?? []) {
+        const geometryStatus = inspectHoleGeometry(round, holeRaw);
+        const hole = maybeMirrorHoleShots(holeRaw, geometryStatus.holeGeometry);
+        const alignedGeometry = alignHoleGeometryToHole(geometryStatus.holeGeometry, hole).geometry;
+        const row = computeHoleBaselineBreakdown(hole, alignedGeometry);
+        if (row) holeRows.push(row);
+    }
+    if (holeRows.length === 0) return null;
+    return sumBreakdownRows(holeRows);
+}
+
+function computeHoleBaselineBreakdown(hole, alignedGeometry = null) {
+    if (!hole) return null;
+    const orderedShots = [...(hole?.shots ?? [])]
+        .filter(s => Number.isFinite(Number(s?.shotNumber)))
+        .sort((a, b) => Number(a.shotNumber) - Number(b.shotNumber));
+    const playableShots = orderedShots.filter(s => !isPenaltyShot(s));
+    if (playableShots.length === 0) return null;
+
+    const phases = {
+        tee: 0,
+        approach: 0,
+        short: 0,
+        putting: 0,
+        penalties: 0
+    };
+    const counts = {
+        tee: 0,
+        approach: 0,
+        short: 0,
+        putting: 0,
+        penalties: 0
+    };
+
+    for (let i = 0; i < playableShots.length; i++) {
+        const shot = playableShots[i];
+        const shotNumber = Number(shot?.shotNumber);
+        const startDistance = distanceToPinFromPoint(shot?.start, hole?.pin);
+        if (!Number.isFinite(shotNumber) || !Number.isFinite(startDistance)) continue;
+
+        const startLie = shotNumber === 1
+            ? 'tee'
+            : inferApproachLie([Number(shot?.start?.x), Number(shot?.start?.z)], alignedGeometry);
+        const startExpected = estimateStrokesToHoleOut(startDistance, startLie);
+        if (!Number.isFinite(startExpected)) continue;
+
+        const nextPlayable = playableShots[i + 1] ?? null;
+        const endDistance = distanceToPinFromPoint(shot?.end, hole?.pin);
+        const holedOut = !nextPlayable || (Number.isFinite(endDistance) && endDistance <= 0.5);
+        const endLie = holedOut
+            ? 'holed'
+            : inferApproachLie([Number(shot?.end?.x), Number(shot?.end?.z)], alignedGeometry);
+        const endExpected = holedOut ? 0 : estimateStrokesToHoleOut(endDistance, endLie);
+        if (!holedOut && !Number.isFinite(endExpected)) continue;
+
+        const phase = classifyDashboardShotPhase(shot, startDistance, startLie);
+        const sg = startExpected - (1 + (holedOut ? 0 : endExpected));
+        phases[phase] += sg;
+        counts[phase] += 1;
+    }
+
+    const penaltyEvents = analyzePenaltyEvents(hole?.shots ?? []);
+    if (penaltyEvents.total > 0) {
+        phases.penalties -= penaltyEvents.total;
+        counts.penalties += penaltyEvents.total;
+    }
+
+    const total = phases.tee + phases.approach + phases.short + phases.putting + phases.penalties;
+    return {
+        tee: phases.tee,
+        approach: phases.approach,
+        short: phases.short,
+        putting: phases.putting,
+        penalties: phases.penalties,
+        total,
+        counts,
+        penaltyEvents: penaltyEvents.total,
+        holeCount: 1
+    };
+}
+
+function sumBreakdownRows(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const totals = {
+        tee: 0,
+        approach: 0,
+        short: 0,
+        putting: 0,
+        penalties: 0,
+        total: 0,
+        counts: {
+            tee: 0,
+            approach: 0,
+            short: 0,
+            putting: 0,
+            penalties: 0
+        },
+        penaltyEvents: 0,
+        holeCount: 0
+    };
+    for (const row of rows) {
+        totals.tee += Number(row?.tee) || 0;
+        totals.approach += Number(row?.approach) || 0;
+        totals.short += Number(row?.short) || 0;
+        totals.putting += Number(row?.putting) || 0;
+        totals.penalties += Number(row?.penalties) || 0;
+        totals.total += Number(row?.total) || 0;
+        totals.counts.tee += Number(row?.counts?.tee) || 0;
+        totals.counts.approach += Number(row?.counts?.approach) || 0;
+        totals.counts.short += Number(row?.counts?.short) || 0;
+        totals.counts.putting += Number(row?.counts?.putting) || 0;
+        totals.counts.penalties += Number(row?.counts?.penalties) || 0;
+        totals.penaltyEvents += Number(row?.penaltyEvents) || 0;
+        totals.holeCount += Number(row?.holeCount) || 1;
+    }
+    return totals;
+}
+
+function classifyDashboardShotPhase(shot, startDistance, startLie) {
+    const clubId = Number(shot?.clubId);
+    if (clubId === 13 || normalize(startLie) === 'green') return 'putting';
+    if (Number(shot?.shotNumber) === 1 || normalize(startLie) === 'tee') return 'tee';
+    if (Number.isFinite(startDistance) && startDistance <= 40) return 'short';
+    if (normalize(startLie) === 'sand' && Number.isFinite(startDistance) && startDistance <= 60) return 'short';
+    return 'approach';
+}
+
+function averageBreakdownRows(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const keys = ['tee', 'approach', 'short', 'putting', 'penalties', 'total'];
+    const avgRow = {};
+    for (const key of keys) {
+        avgRow[key] = avg(rows.map(row => Number(row?.[key])));
+    }
+    avgRow.counts = {
+        tee: avg(rows.map(row => Number(row?.counts?.tee))),
+        approach: avg(rows.map(row => Number(row?.counts?.approach))),
+        short: avg(rows.map(row => Number(row?.counts?.short))),
+        putting: avg(rows.map(row => Number(row?.counts?.putting))),
+        penalties: avg(rows.map(row => Number(row?.counts?.penalties)))
+    };
+    avgRow.penaltyEvents = avg(rows.map(row => Number(row?.penaltyEvents)));
+    avgRow.holeCount = avg(rows.map(row => Number(row?.holeCount)));
+    return avgRow;
+}
+
+function buildRoundDateSpan(rounds) {
+    const dates = (rounds ?? []).map(round => String(round?.date ?? '')).filter(Boolean).sort();
+    if (dates.length === 0) return '-';
+    return dates.length === 1 ? dates[0] : `${dates[0]} -> ${dates[dates.length - 1]}`;
+}
+
+function findWorstBreakdownPhase(row) {
+    if (!row) return null;
+    const phases = [
+        ['tee', row.tee],
+        ['approach', row.approach],
+        ['short', row.short],
+        ['putting', row.putting],
+        ['penalties', row.penalties]
+    ].filter(([, value]) => Number.isFinite(value));
+    if (phases.length === 0) return null;
+    phases.sort((a, b) => a[1] - b[1]);
+    return { key: phases[0][0], value: phases[0][1] };
+}
+
+function findBestBreakdownPhase(row) {
+    if (!row) return null;
+    const phases = [
+        ['tee', row.tee],
+        ['approach', row.approach],
+        ['short', row.short],
+        ['putting', row.putting]
+    ].filter(([, value]) => Number.isFinite(value));
+    if (phases.length === 0) return null;
+    phases.sort((a, b) => b[1] - a[1]);
+    return { key: phases[0][0], value: phases[0][1] };
+}
+
+function formatBaselineDelta(value, decimals = 2) {
+    if (!Number.isFinite(value)) return 'n/a';
+    const abs = Math.abs(value);
+    if (abs < 0.01) return 'Even vs baseline';
+    return value > 0
+        ? `${abs.toFixed(decimals)} gained`
+        : `${abs.toFixed(decimals)} lost`;
+}
+
+function labelDashboardPhase(key) {
+    switch (key) {
+        case 'tee': return 'Tee';
+        case 'approach': return 'Approach';
+        case 'short': return 'Short game';
+        case 'putting': return 'Putting';
+        case 'penalties': return 'Penalties';
+        default: return 'Unknown';
+    }
 }
 
 function countPenalties(shots) {

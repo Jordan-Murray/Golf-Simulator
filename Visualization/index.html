@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golf 3D - Shot Visualizer</title>
-    <link rel="stylesheet" href="css/style.css?v=20260316e" />
+    <link rel="stylesheet" href="css/style.css?v=20260316g" />
     <script type="importmap">
     {
         "imports": {
@@ -71,6 +71,10 @@
         <div id="hole-analytics-header">
             <div id="hole-analytics-title">Hole Analytics</div>
             <div class="panel-header-actions">
+                <select id="analytics-benchmark-mode" title="Choose strokes baseline">
+                    <option value="personal" selected>My Baseline</option>
+                    <option value="target">Target Benchmark</option>
+                </select>
                 <button id="btn-analytics-toggle" type="button" title="Show or hide detailed analytics">Show Details</button>
                 <button class="panel-collapse-btn" type="button" data-panel-toggle="analytics" aria-expanded="true" title="Minimize panel">-</button>
             </div>
@@ -177,6 +181,6 @@
 
     <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst | M menu | Esc close menu</div>
 
-    <script type="module" src="js/main.js?v=20260316f"></script>
+    <script type="module" src="js/main.js?v=20260316j"></script>
 </body>
 </html>

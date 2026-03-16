@@ -268,6 +268,19 @@ body {
     align-items: center;
     gap: 8px;
 }
+#analytics-benchmark-mode {
+    max-width: 148px;
+    padding: 4px 8px;
+    border: 1px solid rgba(255,255,255,0.24);
+    border-radius: 7px;
+    background: rgba(255,255,255,0.12);
+    color: #f5fbff;
+    font-size: 0.72rem;
+}
+#analytics-benchmark-mode option {
+    background: #1a1a2e;
+    color: #f5fbff;
+}
 .panel-collapse-btn {
     width: 28px;
     height: 28px;
@@ -370,6 +383,16 @@ body {
     color: #d8f8da;
     margin-bottom: 8px;
 }
+.analytics-section-intro {
+    margin-bottom: 8px;
+    font-size: 0.69rem;
+    line-height: 1.45;
+    color: rgba(225, 235, 244, 0.72);
+}
+.analytics-section-intro-sep {
+    margin: 0 6px;
+    color: rgba(225, 235, 244, 0.38);
+}
 .analytics-row-list {
     display: grid;
     gap: 6px;
@@ -390,6 +413,9 @@ body {
     color: #f1f7fb;
     text-align: right;
 }
+.analytics-row-value-emphasis {
+    font-weight: 700;
+}
 .analytics-note {
     padding: 9px 10px;
     border-radius: 9px;
@@ -408,6 +434,25 @@ body {
     font-size: 0.77rem;
     line-height: 1.42;
     color: #f2fbf2;
+}
+.analytics-inline-grid {
+    display: grid;
+    gap: 6px;
+}
+.analytics-inline-metric {
+    display: grid;
+    gap: 2px;
+}
+.analytics-inline-metric-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(228, 239, 248, 0.7);
+}
+.analytics-inline-metric-value {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: #f4fbff;
 }
 .analytics-badge-row {
     display: flex;
@@ -433,6 +478,53 @@ body {
 }
 .analytics-muted {
     color: rgba(225, 235, 244, 0.72);
+}
+.analytics-delta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.analytics-delta-gained {
+    background: rgba(102, 187, 106, 0.16);
+    border-color: rgba(102, 187, 106, 0.28);
+    color: #d9f8de;
+}
+.analytics-delta-lost {
+    background: rgba(239, 83, 80, 0.16);
+    border-color: rgba(239, 83, 80, 0.28);
+    color: #ffd9d7;
+}
+.analytics-delta-even {
+    background: rgba(255,255,255,0.10);
+    border-color: rgba(255,255,255,0.16);
+    color: #eef6fb;
+}
+.analytics-delta-pair {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+.analytics-delta-pair-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.analytics-delta-pair-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(228, 239, 248, 0.56);
+}
+.analytics-delta-pair-sep {
+    width: 1px;
+    min-height: 20px;
+    background: rgba(255,255,255,0.12);
 }
 
 /* ---- Shot Info (right panel) ---- */
@@ -645,6 +737,20 @@ body {
 }
 .planner-control select option {
     background: #1a1a2e;
+}
+.planner-reset-btn {
+    justify-self: start;
+    margin-top: -2px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.10);
+    color: #f6fbff;
+    font-size: 0.76rem;
+    cursor: pointer;
+}
+.planner-reset-btn:hover {
+    background: rgba(255,255,255,0.20);
 }
 .planner-slider-meta {
     display: flex;

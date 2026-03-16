@@ -13,6 +13,7 @@ export function initUI() {
         holeScore: document.getElementById('hole-score'),
         holeAnalyticsBody: document.getElementById('hole-analytics-body'),
         btnAnalyticsToggle: document.getElementById('btn-analytics-toggle'),
+        analyticsBenchmarkMode: document.getElementById('analytics-benchmark-mode'),
         shotPanel: document.getElementById('shot-panel'),
         shotClub: document.getElementById('shot-club'),
         shotDist: document.getElementById('shot-dist'),
@@ -330,6 +331,17 @@ export function onAnalyticsToggle(cb) {
     elements.btnAnalyticsToggle.addEventListener('click', () => cb());
 }
 
+export function getAnalyticsBenchmarkMode() {
+    return elements.analyticsBenchmarkMode?.value ?? 'personal';
+}
+
+export function onAnalyticsBenchmarkModeChange(cb) {
+    if (!elements.analyticsBenchmarkMode) return;
+    elements.analyticsBenchmarkMode.addEventListener('change', () => {
+        cb(getAnalyticsBenchmarkMode());
+    });
+}
+
 export function setAnalyticsDetailsVisible(visible) {
     applyAnalyticsToggleState(visible);
 }
@@ -390,6 +402,15 @@ export function setSpreadLegendVisible(visible) {
 export function onPlannerChange(cb) {
     if (!elements.plannerBody) return;
     const emit = meta => cb(getPlannerControls(), meta ?? {});
+    elements.plannerBody.addEventListener('click', e => {
+        const target = e.target?.closest?.('[data-planner-reset]');
+        if (!target) return;
+        emit({
+            live: false,
+            source: 'reset',
+            action: 'reset'
+        });
+    });
     elements.plannerBody.addEventListener('change', e => {
         const target = e.target;
         if (!target?.closest?.('[data-planner-controls]')) return;
