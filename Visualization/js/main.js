@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createScene, frameHole, focusCameraForPutt } from './scene.js?v=20260309i';
 import { buildHole } from './course.js?v=20260311n';
 import { buildShots, buildShotSpread, nextShot, prevShot, togglePlay, goToShot, getCurrentShot, updateAnimation, getShotCount, getPlaybackValue, seekPlayback, setCinematicMode, getBallPositionXZ } from './shots.js?v=20260312b';
-import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, setGeometryDebugVisible, updateHoleAnalytics, updateCaddiePlan, onCaddiePlanSelect, setCaddieVisible, setSpreadLegendVisible, syncSpreadLegendItems, setHolePanelVisible, setHoleAnalyticsVisible, setShotPanelVisible, onSpreadFiltersChange, getSpreadFilters, onPanelVisibilityChange, getPanelVisibility, onBestHoleReplay, onWorstHoleReplay, setRoundSelection, onImportGeometry, onMenuSettingsToggle, setMenuSettingsVisible, updateSimApiSummary, setMainMenuVisible, onMainMenuSelect, onOpenMainMenu, onAnalyticsToggle, setAnalyticsDetailsVisible } from './ui.js?v=20260313b';
+import { initUI, populateRoundSelector, updateHoleInfo, updateShotInfo, updateCourseInfo, buildScorecard, onHoleClick, setPlayIcon, updateGeometryDebug, setTimelineBounds, setTimelineValue, onTimelineInput, onCinematicModeChange, setGeometryDebugVisible, updateHoleAnalytics, updateCaddiePlan, updatePlannerPanel, onCaddiePlanSelect, onPlannerChange, setCaddieVisible, setPlannerVisible, setSpreadLegendVisible, syncSpreadLegendItems, setHolePanelVisible, setHoleAnalyticsVisible, setShotPanelVisible, onSpreadFiltersChange, getSpreadFilters, onPanelVisibilityChange, getPanelVisibility, onBestHoleReplay, onWorstHoleReplay, setRoundSelection, onImportGeometry, onMenuSettingsToggle, setMenuSettingsVisible, updateSimApiSummary, setMainMenuVisible, onMainMenuSelect, onOpenMainMenu, onAnalyticsToggle, setAnalyticsDetailsVisible } from './ui.js?v=20260316f';
 
 let vizData = null;
 let geometryData = null;
@@ -19,6 +19,8 @@ let currentAnalysisGeometry = null;
 let currentSelectedHole = null;
 let currentSpreadSamples = [];
 let currentAnalysisSamples = [];
+let currentTeeOptions = [];
+let currentPlannerModel = null;
 let cameraPuttMode = false;
 let cameraUserOverrideUntil = 0;
 let geometryDebugVisible = false;
@@ -39,7 +41,12 @@ let panelVisibility = {
     analytics: true,
     shot: true,
     caddie: true,
+    planner: true,
     spreadLegend: true
+};
+let plannerState = {
+    club: null,
+    aimOffsetMeters: 0
 };
 let sceneCtx = null;
 const clock = { last: 0 };
@@ -186,6 +193,7 @@ async function init() {
     onHoleClick(idx => {
         currentHoleIdx = idx;
         selectedTeePlanClub = null;
+        plannerState = { club: null, aimOffsetMeters: 0 };
         loadHole();
     });
 
@@ -221,6 +229,9 @@ async function init() {
     onPanelVisibilityChange(next => {
         panelVisibility = next;
         applyPanelVisibility();
+        if (spreadMode) {
+            refreshSpreadLayerVisuals();
+        }
     });
     onBestHoleReplay(() => {
         replayBestHoleForCurrent();
@@ -232,6 +243,17 @@ async function init() {
         if (!club || normalize(club) === normalize(selectedTeePlanClub)) return;
         selectedTeePlanClub = club;
         refreshCaddieAndInsights();
+    });
+    onPlannerChange((next, meta = {}) => {
+        plannerState = {
+            club: String(next?.club ?? '').trim() || plannerState.club,
+            aimOffsetMeters: clamp(Number(next?.aimOffsetMeters) || 0, -24, 24)
+        };
+        if (meta.live && meta.source === 'aim') {
+            refreshPlannerOverlayPreview();
+            return;
+        }
+        refreshPlannerAndInsights();
     });
     onImportGeometry(async file => {
         await runGeometryImportApi(file);
@@ -284,6 +306,7 @@ function applyPanelVisibility() {
     setHoleAnalyticsVisible(panelVisibility.analytics);
     setShotPanelVisible(panelVisibility.shot);
     setCaddieVisible(panelVisibility.caddie);
+    setPlannerVisible(spreadMode && panelVisibility.planner);
     setSpreadLegendVisible(spreadMode && panelVisibility.spreadLegend);
 }
 
@@ -412,7 +435,11 @@ function buildShotOutcomeIndex(rounds) {
             const alignedGeometry = alignHoleGeometryToHole(holeStatus.holeGeometry, holeForAnalysis).geometry;
             const holeScore = Number(hole?.score);
             if (!Number.isFinite(holeScore)) continue;
-            for (const shot of holeForAnalysis?.shots ?? []) {
+            const orderedShots = [...(holeForAnalysis?.shots ?? [])]
+                .filter(shot => Number.isFinite(Number(shot?.shotNumber)))
+                .sort((a, b) => Number(a.shotNumber) - Number(b.shotNumber));
+            for (let idx = 0; idx < orderedShots.length; idx++) {
+                const shot = orderedShots[idx];
                 const clubId = Number(shot?.clubId);
                 const shotNumber = Number(shot?.shotNumber);
                 if (!Number.isFinite(clubId) || !Number.isFinite(shotNumber)) continue;
@@ -422,13 +449,26 @@ function buildShotOutcomeIndex(rounds) {
                 const remainingAfter = holeScore - shotNumber;
                 if (!Number.isFinite(startDistance) || !Number.isFinite(remainingAfter) || remainingAfter < 0) continue;
                 const startPoint = [Number(shot?.start?.x), Number(shot?.start?.z)];
+                const endPoint = [Number(shot?.end?.x), Number(shot?.end?.z)];
                 const lie = alignedGeometry ? inferApproachLie(startPoint, alignedGeometry) : null;
+                const endLie = alignedGeometry ? inferApproachLie(endPoint, alignedGeometry) : null;
+                const nextShot = orderedShots[idx + 1] ?? null;
+                const endedOnGreen = endLie === 'green' || Number(nextShot?.clubId) === 13;
+                const puttsAfter = orderedShots
+                    .slice(idx + 1)
+                    .filter(s => Number(s?.clubId) === 13)
+                    .length;
+                const endDistance = distanceToPinFromPoint(shot?.end, holeForAnalysis?.pin);
 
                 const sample = {
                     clubId,
                     startDistance,
                     remainingAfter,
-                    lie
+                    lie,
+                    endLie,
+                    endedOnGreen,
+                    puttsAfter,
+                    endDistance
                 };
                 all.push(sample);
                 const row = byClubId.get(clubId) ?? [];
@@ -456,6 +496,7 @@ function rebuildShotOutcomeIndex() {
 function loadRound(idx) {
     currentRoundIdx = idx;
     selectedTeePlanClub = null;
+    plannerState = { club: null, aimOffsetMeters: 0 };
     setRoundSelection(idx);
     const round = vizData.rounds[currentRoundIdx];
     const holeCount = Array.isArray(round?.holes) ? round.holes.length : 0;
@@ -525,6 +566,7 @@ function replayExtremeHoleForCurrent(mode) {
     const chosen = candidates[0];
     spreadMode = false;
     selectedTeePlanClub = null;
+    plannerState = { club: null, aimOffsetMeters: 0 };
     analyticsDetailsVisible = false;
     setAnalyticsDetailsVisible(analyticsDetailsVisible);
     applyPanelVisibility();
@@ -562,7 +604,11 @@ function loadHole() {
         analyticsGeometry
     );
     selectedTeePlanClub = normalizeSelectedTeePlanClub(teeOptions, selectedTeePlanClub);
+    currentTeeOptions = teeOptions;
+    plannerState = normalizePlannerState(teeOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(selectedHole, analysisSamples, analyticsGeometry, teeOptions, plannerState);
     const caddiePlanText = formatPreShotCaddiePlan(selectedHole, analysisSamples, analyticsGeometry, selectedTeePlanClub);
+    const plannerPanelText = formatWhatIfPlanner(selectedHole, teeOptions, currentPlannerModel);
     const analyticsSummaryText = formatHoleAnalyticsBasic(selectedHole, analysisSamples, analyticsGeometry);
     const analyticsDetailsText = formatHoleAnalytics(selectedHole, analysisSamples, analyticsGeometry);
     const holeForRender = getHoleForRender(renderReferenceHole, holeGeometry);
@@ -585,11 +631,15 @@ function loadHole() {
     clearDynamicSceneGroups(sceneCtx.scene);
     buildHole(sceneCtx.scene, holeForRender, holeGeometry);
     updateCaddiePlan(caddiePlanText);
+    updatePlannerPanel(plannerPanelText);
     if (spreadMode) {
         buildShotSpread(sceneCtx.scene, spreadSamples, spreadFilters);
         const showInsights = spreadFilters.insightAim || spreadFilters.insightDispersion || spreadFilters.insightPenalty;
         if (showInsights) {
             buildSpreadInsightsOverlay(sceneCtx.scene, selectedHole, spreadSamples, holeGeometry, spreadFilters, selectedTeePlanClub);
+        }
+        if (panelVisibility.planner && currentPlannerModel) {
+            buildPlannerOverlay(sceneCtx.scene, currentPlannerModel);
         }
         setTimelineBounds(0);
         setTimelineValue(0, null);
@@ -623,11 +673,14 @@ function refreshSpreadLayerVisuals() {
         return;
     }
 
-    clearTaggedSceneGroups(sceneCtx.scene, ['golf-shot-group', 'golf-insight-group']);
+    clearTaggedSceneGroups(sceneCtx.scene, ['golf-shot-group', 'golf-insight-group', 'golf-planner-group']);
     buildShotSpread(sceneCtx.scene, currentSpreadSamples, spreadFilters);
     const showInsights = spreadFilters.insightAim || spreadFilters.insightDispersion || spreadFilters.insightPenalty;
     if (showInsights) {
         buildSpreadInsightsOverlay(sceneCtx.scene, currentSelectedHole, currentSpreadSamples, currentHoleGeometry, spreadFilters, selectedTeePlanClub);
+    }
+    if (panelVisibility.planner && currentPlannerModel) {
+        buildPlannerOverlay(sceneCtx.scene, currentPlannerModel);
     }
     updateShotInfo(null);
     setTimelineBounds(0);
@@ -643,9 +696,34 @@ function refreshCaddieAndInsights() {
         currentAnalysisGeometry
     );
     selectedTeePlanClub = normalizeSelectedTeePlanClub(teeOptions, selectedTeePlanClub);
+    currentTeeOptions = teeOptions;
+    plannerState = normalizePlannerState(teeOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, teeOptions, plannerState);
     updateCaddiePlan(formatPreShotCaddiePlan(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, selectedTeePlanClub));
+    updatePlannerPanel(formatWhatIfPlanner(currentSelectedHole, teeOptions, currentPlannerModel));
     if (spreadMode) {
         refreshSpreadLayerVisuals();
+    }
+}
+
+function refreshPlannerAndInsights() {
+    if (!currentSelectedHole) return;
+    plannerState = normalizePlannerState(currentTeeOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, currentTeeOptions, plannerState);
+    updatePlannerPanel(formatWhatIfPlanner(currentSelectedHole, currentTeeOptions, currentPlannerModel));
+    if (spreadMode) {
+        refreshSpreadLayerVisuals();
+    }
+}
+
+function refreshPlannerOverlayPreview() {
+    if (!currentSelectedHole) return;
+    plannerState = normalizePlannerState(currentTeeOptions, plannerState, selectedTeePlanClub);
+    currentPlannerModel = buildWhatIfPlannerModel(currentSelectedHole, currentAnalysisSamples, currentAnalysisGeometry, currentTeeOptions, plannerState);
+    if (!spreadMode || !sceneCtx) return;
+    clearTaggedSceneGroups(sceneCtx.scene, ['golf-planner-group']);
+    if (panelVisibility.planner && currentPlannerModel) {
+        buildPlannerOverlay(sceneCtx.scene, currentPlannerModel);
     }
 }
 
@@ -1121,14 +1199,16 @@ function formatPreShotCaddiePlan(currentHole, samples, alignedGeometry = null, s
     const comparison = buildTeePlanComparison(primary, conservative);
     const primaryApproachPlan = buildApproachPlanForOption(primary, alignedGeometry);
     const conservativeApproachPlan = buildApproachPlanForOption(conservative, alignedGeometry);
+    const primaryApproachPreview = buildApproachPreviewForPlan(primary, primaryApproachPlan);
+    const conservativeApproachPreview = buildApproachPreviewForPlan(conservative, conservativeApproachPlan);
 
     return [
         '<div class="caddie-stack">',
         `<div class="caddie-meta">Hole ${escapeHtml(String(currentHole.holeNumber))} (Par ${escapeHtml(String(currentHole.par))})<br>Window: ${escapeHtml(dateSpan)} (${samples.length} rounds)<br><span class="analytics-muted">Click a tee plan to preview its aim line and dispersion.</span></div>`,
         '<div class="caddie-plan-grid">',
-        renderCaddiePlan(primary, primaryApproachPlan, 'Primary tee plan', 'primary', normalize(activeOption?.club) === normalize(primary?.club)),
+        renderCaddiePlan(primary, primaryApproachPlan, primaryApproachPreview, 'Primary tee plan', 'primary', normalize(activeOption?.club) === normalize(primary?.club)),
         conservative && conservative.club !== primary?.club
-            ? renderCaddiePlan(conservative, conservativeApproachPlan, 'Safer fallback', 'secondary', normalize(activeOption?.club) === normalize(conservative?.club))
+            ? renderCaddiePlan(conservative, conservativeApproachPlan, conservativeApproachPreview, 'Safer fallback', 'secondary', normalize(activeOption?.club) === normalize(conservative?.club))
             : '<div class="caddie-plan secondary disabled"><div class="caddie-plan-header"><div><div class="caddie-plan-label">Safer fallback</div><div class="caddie-plan-club">No distinct backup yet</div></div></div><div class="caddie-subnote">You need a few more rounds with a second tee club before a backup line is reliable.</div></div>',
         '</div>',
         renderCaddieCallout('Aim cue', escapeHtml(planAimNote)),
@@ -1185,7 +1265,7 @@ function renderAnalyticsBadgeRow(badges) {
     return html ? `<div class="analytics-badge-row">${html}</div>` : '';
 }
 
-function renderCaddiePlan(option, approachPlan, label, tone, selected = false) {
+function renderCaddiePlan(option, approachPlan, approachPreview, label, tone, selected = false) {
     if (!option) {
         return `<div class="caddie-plan ${tone}"><div class="caddie-plan-header"><div><div class="caddie-plan-label">${escapeHtml(label)}</div><div class="caddie-plan-club">No data</div></div></div></div>`;
     }
@@ -1207,8 +1287,10 @@ function renderCaddiePlan(option, approachPlan, label, tone, selected = false) {
         renderCaddieRow('Fairway / risk', `${formatOptionFir(option)} | Pen ${(option.penaltyHoleRateAdj * 100).toFixed(0)}%`),
         renderCaddieRow('Tee outcome', `${landingText} | ${leaveText}`),
         renderCaddieRow('Smart next club', approachText),
+        renderCaddieRow('Approach outlook', formatApproachPreviewOutlook(approachPreview)),
         renderCaddieRow('Avg putts', `${option.avgPutts.toFixed(2)} / hole`)
     ].join('');
+    const chainPreview = formatApproachChainPreview(option, approachPlan, approachPreview);
 
     return [
         `<button type="button" class="caddie-plan ${tone}${selected ? ' selected' : ''}" data-tee-plan-club="${escapeHtml(option.club)}">`,
@@ -1217,6 +1299,7 @@ function renderCaddiePlan(option, approachPlan, label, tone, selected = false) {
         `<div class="caddie-plan-badge">${selected ? 'Previewing' : escapeHtml(sampleBadge)}</div>`,
         '</div>',
         `<div class="caddie-row-list">${rowsHtml}</div>`,
+        chainPreview ? `<div class="caddie-chain">${chainPreview}</div>` : '',
         option.note ? `<div class="caddie-subnote">${escapeHtml(option.note)}</div>` : '',
         '</button>'
     ].join('');
@@ -1238,6 +1321,338 @@ function renderCaddieCallout(title, bodyHtml) {
         `<div class="caddie-callout-body">${bodyHtml}</div>`,
         '</div>'
     ].join('');
+}
+
+function formatWhatIfPlanner(currentHole, teeOptions, plannerModel) {
+    if (!Array.isArray(teeOptions) || teeOptions.length === 0) {
+        return '<div class="planner-note">No tee-shot history yet for this hole. Play a few rounds to unlock the planner.</div>';
+    }
+
+    const primary = choosePrimaryTeeOption(teeOptions);
+    const selectedClub = plannerModel?.selectedOption?.club ?? plannerState.club ?? primary?.club ?? teeOptions[0]?.club ?? '';
+    const aimOffset = Number.isFinite(plannerModel?.aimOffsetMeters) ? plannerModel.aimOffsetMeters : (Number(plannerState.aimOffsetMeters) || 0);
+    const clubOptions = teeOptions
+        .map(option => `<option value="${escapeHtml(option.club)}"${normalize(option.club) === normalize(selectedClub) ? ' selected' : ''}>${escapeHtml(option.club)} (${escapeHtml(option.confidence)} | n=${option.n})</option>`)
+        .join('');
+
+    const controls = [
+        '<div class="planner-controls" data-planner-controls>',
+        '<div class="planner-control-grid">',
+        '<div class="planner-control">',
+        '<label>Planner Club</label>',
+        `<select data-planner-club>${clubOptions}</select>`,
+        '</div>',
+        '<div class="planner-control">',
+        '<label>Aim Offset</label>',
+        `<input type="range" min="-24" max="24" step="1" value="${escapeHtml(String(Math.round(aimOffset)))}" data-planner-aim />`,
+        `<div class="planner-slider-meta"><span data-planner-aim-label>${formatAimOffsetLabel(aimOffset)}</span><span>Adjust target line left / right</span></div>`,
+        '</div>',
+        '</div>'
+    ];
+
+    if (!plannerModel) {
+        controls.push('<div class="planner-note">Planner is building from your tee-shot sample.</div>', '</div>');
+        return controls.join('');
+    }
+
+    const modeledScoreText = Number.isFinite(plannerModel.expectedScore)
+        ? `${plannerModel.expectedScore.toFixed(2)} (${formatSigned(plannerModel.toPar, 1)})`
+        : 'n/a';
+    const landingPattern = [
+        Number.isFinite(plannerModel.simulation?.fairwayRate) ? `FIR ${(plannerModel.simulation.fairwayRate * 100).toFixed(0)}%` : null,
+        Number.isFinite(plannerModel.simulation?.hazardRate) ? `Pen ${(plannerModel.simulation.hazardRate * 100).toFixed(0)}%` : null,
+        Number.isFinite(plannerModel.simulation?.greenRate) ? `Green ${(plannerModel.simulation.greenRate * 100).toFixed(0)}%` : null
+    ].filter(Boolean).join(' | ');
+    const leaveText = Number.isFinite(plannerModel.syntheticOption?.leaveDistance)
+        ? `${plannerModel.syntheticOption.leaveDistance.toFixed(0)} yds | ${plannerModel.leaveLie ?? 'rough'}`
+        : 'Leave building';
+    const approachText = plannerModel.approachPlan?.label ?? 'No approach model yet';
+    const approachOutlook = formatApproachPreviewOutlook(plannerModel.approachPreview);
+    const chainPreview = formatApproachChainPreview(plannerModel.syntheticOption, plannerModel.approachPlan, plannerModel.approachPreview);
+    const comparison = formatPlannerComparison(plannerModel, primary);
+
+    controls.push(
+        '<div class="planner-summary">',
+        '<div class="planner-summary-card">',
+        '<div class="planner-summary-title">Planner Preview</div>',
+        '<div class="planner-row-list">',
+        renderPlannerRow('Modeled score', modeledScoreText),
+        renderPlannerRow('Landing pattern', landingPattern || 'Pattern building'),
+        renderPlannerRow('Predicted leave', leaveText),
+        renderPlannerRow('Smart next club', approachText),
+        renderPlannerRow('Approach outlook', approachOutlook),
+        '</div>',
+        chainPreview ? `<div class="caddie-chain">${escapeHtml(chainPreview)}</div>` : '',
+        '</div>',
+        comparison ? renderPlannerCallout('Compare To Primary', comparison) : '',
+        '<div class="planner-note">Planner uses modeled landing shape + geometry + smart distances. Treat it as a decision aid, not a guarantee.</div>',
+        '</div>',
+        '</div>'
+    );
+
+    return controls.join('');
+}
+
+function renderPlannerRow(label, value) {
+    return [
+        '<div class="planner-row">',
+        `<div class="planner-row-label">${escapeHtml(label)}</div>`,
+        `<div class="planner-row-value">${escapeHtml(String(value ?? '-'))}</div>`,
+        '</div>'
+    ].join('');
+}
+
+function renderPlannerCallout(title, body) {
+    return [
+        '<div class="planner-callout">',
+        `<div class="planner-callout-title">${escapeHtml(title)}</div>`,
+        `<div class="planner-callout-body">${escapeHtml(body)}</div>`,
+        '</div>'
+    ].join('');
+}
+
+function formatAimOffsetLabel(value) {
+    const v = Number(value) || 0;
+    if (Math.abs(v) < 0.5) return 'Center / default line';
+    return v < 0 ? `${Math.abs(v).toFixed(0)}m left` : `${v.toFixed(0)}m right`;
+}
+
+function formatPlannerComparison(model, primaryOption) {
+    if (!model || !primaryOption || !Number.isFinite(model.expectedScore)) return '';
+    const primaryExpected = Number.isFinite(primaryOption.strategyExpectedScore)
+        ? primaryOption.strategyExpectedScore
+        : primaryOption.adjustedExpectedScore;
+    const deltaScore = model.expectedScore - primaryExpected;
+    const deltaFir = Number.isFinite(model.simulation?.fairwayRate) && Number.isFinite(primaryOption.firRateAdj)
+        ? (model.simulation.fairwayRate - primaryOption.firRateAdj) * 100
+        : null;
+    const deltaPenalty = Number.isFinite(model.simulation?.hazardRate)
+        ? (model.simulation.hazardRate - primaryOption.penaltyHoleRateAdj) * 100
+        : null;
+    const deltaLeave = Number.isFinite(model.syntheticOption?.leaveDistance) && Number.isFinite(primaryOption.leaveDistance)
+        ? model.syntheticOption.leaveDistance - primaryOption.leaveDistance
+        : null;
+
+    const parts = [`${model.selectedOption.club} planner trades ${formatSigned(deltaScore, 2)} strokes versus ${primaryOption.club}.`];
+    if (Number.isFinite(deltaFir)) parts.push(`FIR ${formatSigned(deltaFir, 0)} pts.`);
+    if (Number.isFinite(deltaPenalty)) parts.push(`Penalty ${formatSigned(deltaPenalty, 0)} pts.`);
+    if (Number.isFinite(deltaLeave)) parts.push(`Leave ${formatSigned(deltaLeave, 0)} yds.`);
+    return parts.join(' ');
+}
+
+function normalizePlannerState(teeOptions, state, preferredClub = null) {
+    const fallbackClub = preferredClub
+        ?? choosePrimaryTeeOption(teeOptions)?.club
+        ?? teeOptions?.[0]?.club
+        ?? null;
+    const club = resolveTeePlanOption(teeOptions, state?.club)?.club
+        ?? resolveTeePlanOption(teeOptions, preferredClub)?.club
+        ?? fallbackClub;
+    return {
+        club,
+        aimOffsetMeters: clamp(Number(state?.aimOffsetMeters) || 0, -24, 24)
+    };
+}
+
+function buildWhatIfPlannerModel(referenceHole, samples, alignedGeometry, teeOptions, state) {
+    if (!referenceHole || !Array.isArray(samples) || samples.length === 0 || !Array.isArray(teeOptions) || teeOptions.length === 0) {
+        return null;
+    }
+
+    const tee = getHoleTee(referenceHole);
+    const pin = getHolePin(referenceHole);
+    if (!tee || !pin) return null;
+
+    const vx = pin[0] - tee[0];
+    const vz = pin[1] - tee[1];
+    const pinLen = Math.hypot(vx, vz);
+    if (pinLen < 1e-6) return null;
+
+    const ux = vx / pinLen;
+    const uz = vz / pinLen;
+    const lx = -uz;
+    const lz = ux;
+    const primaryOption = choosePrimaryTeeOption(teeOptions);
+    const selectedOption = resolveTeePlanOption(teeOptions, state?.club) ?? primaryOption ?? teeOptions[0];
+    const teeStats = buildTeeShotShapeStats(referenceHole, samples, selectedOption?.club);
+    if (!selectedOption || !teeStats) return null;
+
+    const fairwayPolygons = asPolygonArrayFlexible(alignedGeometry?.fairway);
+    const defaultAimPoint = findFairwayAimPoint(fairwayPolygons, tee, [ux, uz], [lx, lz], teeStats.meanAlong) ?? teeStats.centerlinePoint;
+    const defaultAimLocal = defaultAimPoint ? projectWorldToLocal(tee, [ux, uz], [lx, lz], defaultAimPoint) : { along: teeStats.meanAlong, lateral: 0 };
+    const aimAlong = Number.isFinite(defaultAimLocal?.along) ? defaultAimLocal.along : teeStats.meanAlong;
+    const aimBaseLateral = Number.isFinite(defaultAimLocal?.lateral) ? defaultAimLocal.lateral : 0;
+    const aimOffsetMeters = clamp(Number(state?.aimOffsetMeters) || 0, -24, 24);
+    const targetAimLateral = aimBaseLateral + aimOffsetMeters;
+    const aimPoint = projectLocalToWorld(tee, [ux, uz], [lx, lz], aimAlong, targetAimLateral);
+    const meanLanding = projectLocalToWorld(tee, [ux, uz], [lx, lz], teeStats.meanAlong, targetAimLateral + teeStats.meanLateral);
+    const simulation = simulatePlannerLandingStats(referenceHole, alignedGeometry, teeStats, targetAimLateral, [ux, uz], [lx, lz]);
+    const leaveDistance = Number.isFinite(simulation?.avgLeaveDistance)
+        ? simulation.avgLeaveDistance
+        : distanceToPinFromPoint({ x: meanLanding[0], z: meanLanding[1] }, referenceHole.pin);
+    const leaveLie = simulation?.dominantLie ?? inferApproachLie(meanLanding, alignedGeometry);
+    const syntheticOption = {
+        ...selectedOption,
+        leaveDistance,
+        meanEndPoint: meanLanding
+    };
+    const approachPlan = buildApproachPlanForSyntheticLeave(syntheticOption, leaveLie);
+    const approachPreview = buildApproachPreviewForPlan(syntheticOption, approachPlan);
+    const continuation = estimateContinuationForApproachPlan(approachPlan, leaveDistance);
+    const modeledPenaltyLoad = Math.max(Number(simulation?.hazardRate) || 0, getModeledTeePenaltyLoad(selectedOption) * 0.5);
+    const expectedScore = continuation
+        ? 1 + modeledPenaltyLoad + continuation.strokesFromHere + (continuation.approachGapPenalty ?? 0)
+        : null;
+    const holePar = Number(referenceHole?.par) || 0;
+
+    return {
+        tee,
+        pin,
+        axis: { u: [ux, uz], l: [lx, lz] },
+        selectedOption,
+        primaryOption,
+        teeStats,
+        aimOffsetMeters,
+        aimPoint,
+        meanLanding,
+        targetAimLateral,
+        leaveLie,
+        simulation,
+        syntheticOption,
+        approachPlan,
+        approachPreview,
+        continuation,
+        expectedScore,
+        toPar: Number.isFinite(expectedScore) ? expectedScore - holePar : null
+    };
+}
+
+function buildApproachPlanForSyntheticLeave(option, leaveLie) {
+    if (!option || !Number.isFinite(option.leaveDistance)) return null;
+    const lie = leaveLie ?? inferApproachLie(option.meanEndPoint, currentAnalysisGeometry);
+    if (lie === 'green') {
+        return {
+            clubId: 13,
+            clubName: resolveClubNameById(13),
+            lie,
+            distance: option.leaveDistance,
+            label: `Putter on green | ${option.leaveDistance.toFixed(0)} yds left`
+        };
+    }
+    if (lie === 'hazard') {
+        return {
+            clubId: null,
+            clubName: null,
+            lie,
+            distance: null,
+            label: 'Penalty-heavy leave near water | no clean approach club'
+        };
+    }
+
+    const smartClub = pickSmartApproachClub(option.leaveDistance, lie);
+    if (!smartClub) {
+        if (option.historicalNextClub) {
+            return {
+                clubId: null,
+                clubName: option.historicalNextClub,
+                lie,
+                distance: null,
+                label: `${option.historicalNextClub} (historical fallback)`
+            };
+        }
+        return null;
+    }
+
+    return {
+        clubId: smartClub.clubId,
+        clubName: smartClub.clubName,
+        lie,
+        distance: smartClub.distance,
+        label: `${smartClub.clubName} | ${smartClub.distance.toFixed(0)} yd smart from ${lie}`
+    };
+}
+
+function simulatePlannerLandingStats(referenceHole, alignedGeometry, teeStats, targetAimLateral, unitForward, unitLateral) {
+    const tee = getHoleTee(referenceHole);
+    if (!tee || !teeStats) return null;
+    const pin = getHolePin(referenceHole);
+    const rng = createSeededRng(`${referenceHole.holeNumber}:${teeStats.club}:${targetAimLateral.toFixed(2)}`);
+    const counts = { fairway: 0, rough: 0, sand: 0, green: 0, hazard: 0 };
+    const sampleCount = 180;
+    let leaveSum = 0;
+    let leaveCount = 0;
+
+    for (let i = 0; i < sampleCount; i++) {
+        const along = clamp(
+            sampleNormal(rng, teeStats.meanAlong, Math.max(teeStats.stdAlong, 4)),
+            Math.max(8, teeStats.meanAlong * 0.35),
+            teeStats.meanAlong * 1.15
+        );
+        const lateral = sampleNormal(rng, targetAimLateral + teeStats.meanLateral, Math.max(teeStats.stdLateral, 3));
+        const point = projectLocalToWorld(tee, unitForward, unitLateral, along, lateral);
+        const lie = inferApproachLie(point, alignedGeometry);
+        if (lie === 'fairway') counts.fairway++;
+        else if (lie === 'sand') counts.sand++;
+        else if (lie === 'green') counts.green++;
+        else if (lie === 'hazard') counts.hazard++;
+        else counts.rough++;
+
+        if (lie !== 'hazard' && pin) {
+            const leave = distanceToPinFromPoint({ x: point[0], z: point[1] }, { x: pin[0], z: pin[1] });
+            if (Number.isFinite(leave)) {
+                leaveSum += leave;
+                leaveCount++;
+            }
+        }
+    }
+
+    const total = sampleCount || 1;
+    const dominantLie = Object.entries(counts)
+        .filter(([lie]) => lie !== 'hazard')
+        .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'rough';
+
+    return {
+        fairwayRate: counts.fairway / total,
+        hazardRate: counts.hazard / total,
+        greenRate: counts.green / total,
+        roughRate: counts.rough / total,
+        sandRate: counts.sand / total,
+        avgLeaveDistance: leaveCount > 0 ? leaveSum / leaveCount : null,
+        dominantLie
+    };
+}
+
+function buildPlannerOverlay(scene, model) {
+    if (!scene || !model?.tee || !model?.aimPoint || !model?.meanLanding) return;
+
+    const group = new THREE.Group();
+    group.userData.tag = 'golf-planner-group';
+
+    addDashedGroundLine(group, model.tee, model.aimPoint, 0xffe082, 0.92, 1.1, 4);
+    addGroundRing(group, model.aimPoint, 1.6, 0xffe082, 0.76, 0.11);
+    addGroundLine(group, model.aimPoint, model.meanLanding, 0xffb74d, 0.95, 0.13);
+    addGroundArrowHead(group, model.aimPoint, model.meanLanding, 0xffb74d);
+    addGroundRing(group, model.meanLanding, 1.35, 0xffb74d, 0.78, 0.12);
+    addGroundDisc(group, model.meanLanding, 1.1, 0xffb74d, 0.16, 0.085);
+
+    const dispersion = buildDispersionEllipsePoints(
+        model.tee,
+        model.axis.u,
+        model.axis.l,
+        model.teeStats.meanAlong,
+        model.targetAimLateral + model.teeStats.meanLateral,
+        model.teeStats.stdAlong,
+        model.teeStats.stdLateral
+    );
+    if (dispersion.length >= 3) {
+        const pts = dispersion.map(p => new THREE.Vector3(p[0], 0.11, p[1]));
+        pts.push(new THREE.Vector3(dispersion[0][0], 0.11, dispersion[0][1]));
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({ color: 0xfff176, transparent: true, opacity: 0.9 });
+        group.add(new THREE.Line(geom, mat));
+    }
+
+    scene.add(group);
 }
 
 function buildSpreadInsightsOverlay(scene, referenceHole, samples, alignedGeometry = null, options = {}, teePlanClub = null) {
@@ -1488,6 +1903,42 @@ function projectLocalToWorld(origin, unitForward, unitLateral, along, lateral) {
         origin[0] + unitForward[0] * along + unitLateral[0] * lateral,
         origin[1] + unitForward[1] * along + unitLateral[1] * lateral
     ];
+}
+
+function projectWorldToLocal(origin, unitForward, unitLateral, point) {
+    if (!Array.isArray(origin) || !Array.isArray(point)) {
+        return { along: 0, lateral: 0 };
+    }
+    const rx = Number(point[0]) - Number(origin[0]);
+    const rz = Number(point[1]) - Number(origin[1]);
+    return {
+        along: rx * unitForward[0] + rz * unitForward[1],
+        lateral: rx * unitLateral[0] + rz * unitLateral[1]
+    };
+}
+
+function createSeededRng(seedText) {
+    let h = 1779033703 ^ String(seedText ?? '').length;
+    for (let i = 0; i < String(seedText ?? '').length; i++) {
+        h = Math.imul(h ^ String(seedText).charCodeAt(i), 3432918353);
+        h = (h << 13) | (h >>> 19);
+    }
+    return function next() {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        h ^= h >>> 16;
+        return (h >>> 0) / 4294967296;
+    };
+}
+
+function sampleNormal(rng, mean = 0, std = 1) {
+    const raw1 = typeof rng === 'function' ? rng() : Math.random();
+    const raw2 = typeof rng === 'function' ? rng() : Math.random();
+    const u1 = Math.max(1e-9, Number.isFinite(raw1) ? raw1 : Math.random());
+    const u2 = Math.max(1e-9, Number.isFinite(raw2) ? raw2 : Math.random());
+    const mag = Math.sqrt(-2 * Math.log(u1));
+    const z0 = mag * Math.cos(2 * Math.PI * u2);
+    return mean + z0 * std;
 }
 
 function buildPenaltyHotspotsFromSamples(samples, alignedGeometry = null) {
@@ -2132,13 +2583,14 @@ function enrichTeeOptionsForDecision(options, alignedGeometry = null) {
     return (options ?? []).map(option => {
         const approachPlan = buildApproachPlanForOption(option, alignedGeometry);
         const continuation = estimateContinuationForApproachPlan(approachPlan, option.leaveDistance);
+        const modeledPenaltyLoad = getModeledTeePenaltyLoad(option);
         const stateExpectedScore = continuation
-            ? 1 + option.penaltyHoleRateAdj + continuation.strokesFromHere
-            : option.adjustedExpectedScore + option.penaltyHoleRateAdj * 0.25;
+            ? 1 + modeledPenaltyLoad + continuation.strokesFromHere
+            : option.adjustedExpectedScore + modeledPenaltyLoad * 0.25;
         const modeledExpectedScore = continuation
             ? stateExpectedScore + (continuation.approachGapPenalty ?? 0)
             : stateExpectedScore;
-        const observedWeight = clamp(option.n / 10, 0.18, 0.70);
+        const observedWeight = getObservedWeightForTeeOption(option.n);
         const strategyExpectedScore = (option.adjustedExpectedScore * observedWeight)
             + (modeledExpectedScore * (1 - observedWeight));
         const holePar = option.adjustedExpectedScore - option.adjustedToPar;
@@ -2172,14 +2624,18 @@ function choosePrimaryTeeOption(options) {
         if (b.n >= 3 && a.n < 3) return 1;
         const scoreA = Number.isFinite(a.strategyPrimaryScore) ? a.strategyPrimaryScore : a.primaryScore;
         const scoreB = Number.isFinite(b.strategyPrimaryScore) ? b.strategyPrimaryScore : b.primaryScore;
-        if (Math.abs(scoreA - scoreB) > 0.03) return scoreA - scoreB;
-        if (a.penaltyHoleRateAdj !== b.penaltyHoleRateAdj) return a.penaltyHoleRateAdj - b.penaltyHoleRateAdj;
-        const firA = a.firRateAdj ?? -1;
-        const firB = b.firRateAdj ?? -1;
-        if (firA !== firB) return firB - firA;
+        const margin = getTeeOptionDecisionMargin(a, b);
+        if (Math.abs(scoreA - scoreB) > margin) return scoreA - scoreB;
         const expA = Number.isFinite(a.strategyExpectedScore) ? a.strategyExpectedScore : a.adjustedExpectedScore;
         const expB = Number.isFinite(b.strategyExpectedScore) ? b.strategyExpectedScore : b.adjustedExpectedScore;
-        if (expA !== expB) return expA - expB;
+        if (Math.abs(expA - expB) > margin * 0.7) return expA - expB;
+        const leaveA = Number.isFinite(a.leaveDistance) ? a.leaveDistance : Number.POSITIVE_INFINITY;
+        const leaveB = Number.isFinite(b.leaveDistance) ? b.leaveDistance : Number.POSITIVE_INFINITY;
+        if (Math.abs(leaveA - leaveB) > 12) return leaveA - leaveB;
+        const firA = a.firRateAdj ?? -1;
+        const firB = b.firRateAdj ?? -1;
+        if (Math.abs(firA - firB) > 0.08) return firB - firA;
+        if (Math.abs(a.penaltyHoleRateAdj - b.penaltyHoleRateAdj) > 0.08) return a.penaltyHoleRateAdj - b.penaltyHoleRateAdj;
         return b.n - a.n;
     })[0];
 }
@@ -2384,6 +2840,179 @@ function buildApproachPlanForOption(option, alignedGeometry) {
         distance: smartClub.distance,
         label: `${smartClub.clubName} | ${smartClub.distance.toFixed(0)} yd smart from ${lie}`
     };
+}
+
+function buildApproachPreviewForPlan(option, plan) {
+    if (!option || !plan || !Number.isFinite(option.leaveDistance)) return null;
+    const targetDistance = option.leaveDistance;
+    const lie = plan.lie ?? null;
+    const stateSummary = summarizeApproachPreviewRows(
+        shotOutcomeIndexByLie.get(lie) ?? [],
+        targetDistance,
+        lie
+    );
+    const clubSummary = Number.isFinite(Number(plan.clubId))
+        ? summarizeApproachPreviewRows(
+            shotOutcomeIndexByClubId.get(Number(plan.clubId)) ?? [],
+            targetDistance,
+            lie
+        )
+        : null;
+    const summary = blendApproachPreviewSummaries(stateSummary, clubSummary);
+    if (!summary) return null;
+
+    const smartDistance = Number(plan.distance);
+    const gap = Number.isFinite(smartDistance) ? smartDistance - targetDistance : null;
+    return {
+        ...summary,
+        gap,
+        clubName: plan.clubName ?? null,
+        lie
+    };
+}
+
+function summarizeApproachPreviewRows(rows, targetDistanceYards, lie = null) {
+    if (!Array.isArray(rows) || rows.length === 0 || !Number.isFinite(targetDistanceYards)) return null;
+    const normalizedLie = normalize(lie);
+    const lieRows = normalizedLie
+        ? rows.filter(row => normalize(row?.lie) === normalizedLie)
+        : rows;
+    const poolRows = lieRows.length >= 8 ? lieRows : rows;
+    const nearest = poolRows
+        .map(row => ({
+            ...row,
+            diff: Math.abs(Number(row?.startDistance) - targetDistanceYards)
+        }))
+        .filter(row => Number.isFinite(row.diff))
+        .sort((a, b) => a.diff - b.diff)
+        .slice(0, Math.min(36, poolRows.length));
+    if (nearest.length === 0) return null;
+
+    const closeBand = nearest.some(r => r.diff <= 15) ? 20 : nearest.some(r => r.diff <= 30) ? 35 : 55;
+    const filtered = nearest.filter(r => r.diff <= closeBand);
+    const use = filtered.length >= 6 ? filtered : nearest.slice(0, Math.min(16, nearest.length));
+
+    let girWeighted = 0;
+    let weightSum = 0;
+    let puttsIfGreenWeighted = 0;
+    let puttsIfGreenWeights = 0;
+    let endDistanceWeighted = 0;
+    let endDistanceWeights = 0;
+
+    for (const row of use) {
+        const weight = 1 / Math.max(4, row.diff + 4);
+        const gir = row.endedOnGreen ? 1 : 0;
+        girWeighted += gir * weight;
+        weightSum += weight;
+
+        if (row.endedOnGreen && Number.isFinite(Number(row.puttsAfter))) {
+            puttsIfGreenWeighted += Number(row.puttsAfter) * weight;
+            puttsIfGreenWeights += weight;
+        }
+        if (Number.isFinite(Number(row.endDistance))) {
+            endDistanceWeighted += Number(row.endDistance) * weight;
+            endDistanceWeights += weight;
+        }
+    }
+
+    if (weightSum <= 0) return null;
+    return {
+        girRate: girWeighted / weightSum,
+        avgPuttsIfGreen: puttsIfGreenWeights > 0 ? puttsIfGreenWeighted / puttsIfGreenWeights : null,
+        avgEndDistance: endDistanceWeights > 0 ? endDistanceWeighted / endDistanceWeights : null,
+        sample: use.length,
+        maxDiff: Math.max(...use.map(row => row.diff))
+    };
+}
+
+function blendApproachPreviewSummaries(stateSummary, clubSummary) {
+    if (!stateSummary && !clubSummary) return null;
+    if (!stateSummary) return clubSummary;
+    if (!clubSummary) return stateSummary;
+
+    const clubWeight = clubSummary.sample >= 10 ? 0.35 : clubSummary.sample >= 6 ? 0.22 : 0.10;
+    const stateWeight = 1 - clubWeight;
+    return {
+        girRate: stateSummary.girRate * stateWeight + clubSummary.girRate * clubWeight,
+        avgPuttsIfGreen: weightedBlendNullable(stateSummary.avgPuttsIfGreen, stateWeight, clubSummary.avgPuttsIfGreen, clubWeight),
+        avgEndDistance: weightedBlendNullable(stateSummary.avgEndDistance, stateWeight, clubSummary.avgEndDistance, clubWeight),
+        sample: Math.max(stateSummary.sample ?? 0, clubSummary.sample ?? 0),
+        maxDiff: Math.min(stateSummary.maxDiff ?? Number.POSITIVE_INFINITY, clubSummary.maxDiff ?? Number.POSITIVE_INFINITY)
+    };
+}
+
+function weightedBlendNullable(a, aWeight, b, bWeight) {
+    const hasA = Number.isFinite(Number(a));
+    const hasB = Number.isFinite(Number(b));
+    if (hasA && hasB) return Number(a) * aWeight + Number(b) * bWeight;
+    if (hasA) return Number(a);
+    if (hasB) return Number(b);
+    return null;
+}
+
+function formatApproachPreviewOutlook(preview) {
+    if (!preview) return 'Building from broader approach data';
+    const gir = Number.isFinite(preview.girRate) ? `GIR ${(preview.girRate * 100).toFixed(0)}%` : 'GIR n/a';
+    const putts = Number.isFinite(preview.avgPuttsIfGreen)
+        ? `${preview.avgPuttsIfGreen.toFixed(2)} putts if GIR`
+        : 'putts on green n/a';
+    return `${gir} | ${putts}`;
+}
+
+function formatApproachChainPreview(option, approachPlan, preview) {
+    if (!option || !approachPlan) return '';
+    const teeClub = option.club ?? 'Tee club';
+    const leave = Number.isFinite(option.leaveDistance) ? `~${option.leaveDistance.toFixed(0)} yds left` : 'leave n/a';
+    const approachClub = approachPlan.clubName ?? 'Approach club';
+    const lieText = approachPlan.lie ? ` from ${approachPlan.lie}` : '';
+    const girText = preview && Number.isFinite(preview.girRate) ? `GIR ${(preview.girRate * 100).toFixed(0)}%` : '';
+    const puttText = preview && Number.isFinite(preview.avgPuttsIfGreen) ? `${preview.avgPuttsIfGreen.toFixed(2)} putts if green` : '';
+    const gapText = preview && Number.isFinite(preview.gap)
+        ? formatApproachGap(preview.gap)
+        : '';
+    const parts = [
+        `${teeClub} -> ${leave}`,
+        `${approachClub}${lieText}`,
+        girText,
+        puttText,
+        gapText
+    ].filter(Boolean);
+    return parts.join(' | ');
+}
+
+function formatApproachGap(gap) {
+    const value = Number(gap);
+    if (!Number.isFinite(value)) return '';
+    if (Math.abs(value) < 4) return 'distance fit on number';
+    return value > 0
+        ? `smart distance +${value.toFixed(0)} yds long`
+        : `smart distance ${value.toFixed(0)} yds short`;
+}
+
+function getObservedWeightForTeeOption(n) {
+    const count = Number(n);
+    if (!Number.isFinite(count) || count <= 1) return 0.50;
+    if (count >= 10) return 0.82;
+    if (count >= 7) return 0.76;
+    if (count >= 5) return 0.70;
+    if (count >= 3) return 0.62;
+    return 0.55;
+}
+
+function getModeledTeePenaltyLoad(option) {
+    const holeRate = Number(option?.penaltyHoleRateAdj);
+    const shotRate = Number(option?.penaltyShotRate);
+    const holeWeight = Number.isFinite(holeRate) ? holeRate * 0.45 : 0;
+    const shotWeight = Number.isFinite(shotRate) ? Math.min(shotRate, 1.4) * 0.12 : 0;
+    return holeWeight + shotWeight;
+}
+
+function getTeeOptionDecisionMargin(a, b) {
+    const minN = Math.min(Number(a?.n) || 0, Number(b?.n) || 0);
+    if (minN >= 10) return 0.03;
+    if (minN >= 6) return 0.05;
+    if (minN >= 4) return 0.07;
+    return 0.10;
 }
 
 function estimateContinuationForApproachPlan(plan, targetDistanceYards) {

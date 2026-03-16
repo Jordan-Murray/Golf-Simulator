@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golf 3D - Shot Visualizer</title>
-    <link rel="stylesheet" href="css/style.css?v=20260313b" />
+    <link rel="stylesheet" href="css/style.css?v=20260316e" />
     <script type="importmap">
     {
         "imports": {
@@ -33,6 +33,7 @@
                     <label class="panel-visibility-item"><input id="panel-analytics" type="checkbox" checked /> Analytics</label>
                     <label class="panel-visibility-item"><input id="panel-shot" type="checkbox" checked /> Shot card</label>
                     <label class="panel-visibility-item"><input id="panel-caddie" type="checkbox" checked /> Pre-shot caddie</label>
+                    <label class="panel-visibility-item"><input id="panel-planner" type="checkbox" checked /> What-if planner</label>
                     <label class="panel-visibility-item"><input id="panel-spread-legend" type="checkbox" checked /> Spread legend</label>
                 </div>
                 <pre id="menu-settings-status">Ready.</pre>
@@ -69,10 +70,15 @@
     <div id="hole-analytics">
         <div id="hole-analytics-header">
             <div id="hole-analytics-title">Hole Analytics</div>
-            <button id="btn-analytics-toggle" type="button" title="Show or hide detailed analytics">Show Details</button>
+            <div class="panel-header-actions">
+                <button id="btn-analytics-toggle" type="button" title="Show or hide detailed analytics">Show Details</button>
+                <button class="panel-collapse-btn" type="button" data-panel-toggle="analytics" aria-expanded="true" title="Minimize panel">-</button>
+            </div>
         </div>
-        <div id="hole-analytics-summary">Loading analytics...</div>
-        <div id="hole-analytics-body" hidden>Detailed analytics hidden.</div>
+        <div id="hole-analytics-content" data-panel-body="analytics">
+            <div id="hole-analytics-summary">Loading analytics...</div>
+            <div id="hole-analytics-body" hidden>Detailed analytics hidden.</div>
+        </div>
     </div>
 
     <div id="shot-panel">
@@ -83,47 +89,68 @@
     </div>
 
     <div id="caddie-panel">
-        <div id="caddie-title">Pre-Shot Caddie</div>
-        <div id="caddie-body">Building plan...</div>
+        <div class="panel-header">
+            <div id="caddie-title">Pre-Shot Caddie</div>
+            <button class="panel-collapse-btn" type="button" data-panel-toggle="caddie" aria-expanded="true" title="Minimize panel">-</button>
+        </div>
+        <div id="caddie-body" data-panel-body="caddie">Building plan...</div>
+    </div>
+
+    <div id="planner-panel">
+        <div class="panel-header">
+            <div id="planner-title">What-If Planner</div>
+            <button class="panel-collapse-btn" type="button" data-panel-toggle="planner" aria-expanded="true" title="Minimize panel">-</button>
+        </div>
+        <div id="planner-body" data-panel-body="planner">Planner loading...</div>
     </div>
 
     <div id="spread-legend">
-        <div id="spread-legend-title">Spread Legend</div>
-        <div id="spread-legend-subtitle">Toggle spread layers</div>
-        <label class="legend-toggle">
-            <input id="spread-show-shots" type="checkbox" />
-            <span>Spread Shots</span>
-        </label>
-        <label class="legend-toggle">
-            <input id="spread-heatmap" type="checkbox" />
-            <span>Heatmap</span>
-        </label>
-        <label class="legend-toggle">
-            <input id="insight-layer-aim" type="checkbox" checked />
-            <span>Aim Lines</span>
-        </label>
-        <label class="legend-toggle">
-            <input id="insight-layer-dispersion" type="checkbox" checked />
-            <span>Dispersion</span>
-        </label>
-        <label class="legend-toggle">
-            <input id="insight-layer-penalty" type="checkbox" />
-            <span>Penalty Hotspots</span>
-        </label>
-        <div class="legend-list">
-            <div class="legend-item" data-layer="showShots"><span class="legend-swatch legend-shot"></span> Shot traces + landing dots</div>
-            <div class="legend-item" data-layer="heatmap"><span class="legend-swatch legend-heatmap"></span> Heatmap intensity blobs</div>
-            <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-base"></span> Tee to pin reference</div>
-            <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-ideal"></span> Ideal starting line</div>
-            <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-miss"></span> Miss trend vector</div>
-            <div class="legend-item" data-layer="insightDispersion"><span class="legend-swatch legend-dispersion"></span> Dispersion envelope</div>
-            <div class="legend-item" data-layer="insightPenalty"><span class="legend-swatch legend-penalty"></span> Penalty source hotspots</div>
+        <div class="panel-header">
+            <div id="spread-legend-title">Spread Legend</div>
+            <button class="panel-collapse-btn" type="button" data-panel-toggle="spreadLegend" aria-expanded="true" title="Minimize panel">-</button>
+        </div>
+        <div id="spread-legend-body" data-panel-body="spreadLegend">
+            <div id="spread-legend-subtitle">Toggle spread layers</div>
+            <label class="legend-toggle">
+                <input id="spread-show-shots" type="checkbox" />
+                <span>Spread Shots</span>
+            </label>
+            <label class="legend-toggle">
+                <input id="spread-heatmap" type="checkbox" />
+                <span>Heatmap</span>
+            </label>
+            <label class="legend-toggle">
+                <input id="insight-layer-aim" type="checkbox" checked />
+                <span>Aim Lines</span>
+            </label>
+            <label class="legend-toggle">
+                <input id="insight-layer-dispersion" type="checkbox" checked />
+                <span>Dispersion</span>
+            </label>
+            <label class="legend-toggle">
+                <input id="insight-layer-penalty" type="checkbox" />
+                <span>Penalty Hotspots</span>
+            </label>
+            <div class="legend-list">
+                <div class="legend-item" data-layer="showShots"><span class="legend-swatch legend-shot"></span> Shot traces + landing dots</div>
+                <div class="legend-item" data-layer="heatmap"><span class="legend-swatch legend-heatmap"></span> Heatmap intensity blobs</div>
+                <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-base"></span> Tee to pin reference</div>
+                <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-ideal"></span> Ideal starting line</div>
+                <div class="legend-item" data-layer="insightAim"><span class="legend-swatch legend-miss"></span> Miss trend vector</div>
+                <div class="legend-item" data-layer="insightDispersion"><span class="legend-swatch legend-dispersion"></span> Dispersion envelope</div>
+                <div class="legend-item" data-layer="insightPenalty"><span class="legend-swatch legend-penalty"></span> Penalty source hotspots</div>
+            </div>
         </div>
     </div>
 
     <div id="geometry-debug">
-        <div id="geometry-debug-title">Geometry Debug</div>
-        <pre id="geometry-debug-body">Waiting for hole...</pre>
+        <div class="panel-header">
+            <div id="geometry-debug-title">Geometry Debug</div>
+            <button class="panel-collapse-btn" type="button" data-panel-toggle="geometryDebug" aria-expanded="true" title="Minimize panel">-</button>
+        </div>
+        <div id="geometry-debug-content" data-panel-body="geometryDebug">
+            <pre id="geometry-debug-body">Waiting for hole...</pre>
+        </div>
     </div>
     <div id="controls">
         <button class="ctrl-btn" id="btn-prev-hole" title="Previous Hole"><<</button>
@@ -150,6 +177,6 @@
 
     <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst | M menu | Esc close menu</div>
 
-    <script type="module" src="js/main.js?v=20260313d"></script>
+    <script type="module" src="js/main.js?v=20260316f"></script>
 </body>
 </html>

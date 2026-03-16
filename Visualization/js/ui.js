@@ -8,6 +8,7 @@ export function initUI() {
         holePar: document.getElementById('hole-par'),
         holePanel: document.getElementById('hole-panel'),
         holeAnalyticsPanel: document.getElementById('hole-analytics'),
+        holeAnalyticsContent: document.getElementById('hole-analytics-content'),
         holeAnalyticsSummary: document.getElementById('hole-analytics-summary'),
         holeScore: document.getElementById('hole-score'),
         holeAnalyticsBody: document.getElementById('hole-analytics-body'),
@@ -19,6 +20,8 @@ export function initUI() {
         shotNum: document.getElementById('shot-num'),
         caddiePanel: document.getElementById('caddie-panel'),
         caddieBody: document.getElementById('caddie-body'),
+        plannerPanel: document.getElementById('planner-panel'),
+        plannerBody: document.getElementById('planner-body'),
         spreadLegend: document.getElementById('spread-legend'),
         spreadLegendItems: Array.from(document.querySelectorAll('.legend-item[data-layer]')),
         insightLayerAim: document.getElementById('insight-layer-aim'),
@@ -27,6 +30,7 @@ export function initUI() {
         geometryDebug: document.getElementById('geometry-debug'),
         geometryDebugBody: document.getElementById('geometry-debug-body'),
         scorecard: document.getElementById('scorecard'),
+        scorecardBar: document.getElementById('scorecard-bar'),
         roundSelect: document.getElementById('round-select'),
         spreadMode: document.getElementById('spread-mode'),
         spreadClub: document.getElementById('spread-club'),
@@ -39,6 +43,7 @@ export function initUI() {
         panelAnalytics: document.getElementById('panel-analytics'),
         panelShot: document.getElementById('panel-shot'),
         panelCaddie: document.getElementById('panel-caddie'),
+        panelPlanner: document.getElementById('panel-planner'),
         panelSpreadLegend: document.getElementById('panel-spread-legend'),
         btnMenuSettings: document.getElementById('btn-menu-settings'),
         menuSettings: document.getElementById('menu-settings'),
@@ -51,8 +56,19 @@ export function initUI() {
         btnPlay: document.getElementById('btn-play'),
         shotTimeline: document.getElementById('shot-timeline'),
         timelineLabel: document.getElementById('timeline-label'),
-        cinematicMode: document.getElementById('cinematic-mode')
+        timelinePanel: document.getElementById('timeline-panel'),
+        controls: document.getElementById('controls'),
+        cinematicMode: document.getElementById('cinematic-mode'),
+        panelToggleButtons: Array.from(document.querySelectorAll('[data-panel-toggle]'))
     };
+    elements.collapsiblePanels = {
+        analytics: { panel: elements.holeAnalyticsPanel, body: elements.holeAnalyticsContent },
+        caddie: { panel: elements.caddiePanel, body: elements.caddieBody },
+        planner: { panel: elements.plannerPanel, body: elements.plannerBody },
+        spreadLegend: { panel: elements.spreadLegend, body: document.getElementById('spread-legend-body') },
+        geometryDebug: { panel: elements.geometryDebug, body: document.getElementById('geometry-debug-content') }
+    };
+    bindPanelCollapseToggles();
     window.addEventListener('resize', () => requestRightPanelLayout());
     requestRightPanelLayout();
 }
@@ -79,6 +95,7 @@ export function updateHoleInfo(hole) {
     const diff = hole.score - hole.par;
     elements.holeScore.textContent = `${hole.score} (${scoreName(diff)})`;
     elements.holeScore.style.color = scoreColor(diff);
+    requestRightPanelLayout();
 }
 
 export function updateShotInfo(shot) {
@@ -187,6 +204,7 @@ export function getPanelVisibility() {
         analytics: elements.panelAnalytics?.checked ?? true,
         shot: elements.panelShot?.checked ?? true,
         caddie: elements.panelCaddie?.checked ?? true,
+        planner: elements.panelPlanner?.checked ?? true,
         spreadLegend: elements.panelSpreadLegend?.checked ?? true
     };
 }
@@ -197,6 +215,7 @@ export function onPanelVisibilityChange(cb) {
     if (elements.panelAnalytics) elements.panelAnalytics.addEventListener('change', emit);
     if (elements.panelShot) elements.panelShot.addEventListener('change', emit);
     if (elements.panelCaddie) elements.panelCaddie.addEventListener('change', emit);
+    if (elements.panelPlanner) elements.panelPlanner.addEventListener('change', emit);
     if (elements.panelSpreadLegend) elements.panelSpreadLegend.addEventListener('change', emit);
 }
 
@@ -324,11 +343,18 @@ export function updateHoleAnalytics(summaryText, detailsText = '') {
     }
     const keepVisible = elements.holeAnalyticsBody ? !elements.holeAnalyticsBody.hidden : false;
     applyAnalyticsToggleState(keepVisible);
+    requestRightPanelLayout();
 }
 
 export function updateCaddiePlan(text) {
     if (!elements.caddieBody) return;
     elements.caddieBody.innerHTML = text;
+    requestRightPanelLayout();
+}
+
+export function updatePlannerPanel(text) {
+    if (!elements.plannerBody) return;
+    elements.plannerBody.innerHTML = text;
     requestRightPanelLayout();
 }
 
@@ -349,10 +375,60 @@ export function setCaddieVisible(visible) {
     requestRightPanelLayout();
 }
 
+export function setPlannerVisible(visible) {
+    if (!elements.plannerPanel) return;
+    elements.plannerPanel.style.display = visible ? 'block' : 'none';
+    requestRightPanelLayout();
+}
+
 export function setSpreadLegendVisible(visible) {
     if (!elements.spreadLegend) return;
     elements.spreadLegend.style.display = visible ? 'block' : 'none';
     requestRightPanelLayout();
+}
+
+export function onPlannerChange(cb) {
+    if (!elements.plannerBody) return;
+    const emit = meta => cb(getPlannerControls(), meta ?? {});
+    elements.plannerBody.addEventListener('change', e => {
+        const target = e.target;
+        if (!target?.closest?.('[data-planner-controls]')) return;
+        emit({
+            live: false,
+            source: target.matches?.('[data-planner-aim]') ? 'aim' : 'club'
+        });
+    });
+    elements.plannerBody.addEventListener('input', e => {
+        const target = e.target;
+        if (!target?.closest?.('[data-planner-controls]')) return;
+        if (target.matches?.('[data-planner-aim]')) {
+            updatePlannerAimLabel(target.value);
+            emit({
+                live: true,
+                source: 'aim'
+            });
+        }
+    });
+}
+
+function getPlannerControls() {
+    return {
+        club: elements.plannerBody?.querySelector?.('[data-planner-club]')?.value ?? '',
+        aimOffsetMeters: Number(elements.plannerBody?.querySelector?.('[data-planner-aim]')?.value ?? 0)
+    };
+}
+
+function updatePlannerAimLabel(value) {
+    const label = elements.plannerBody?.querySelector?.('[data-planner-aim-label]');
+    if (!label) return;
+    const numeric = Number(value) || 0;
+    if (Math.abs(numeric) < 0.5) {
+        label.textContent = 'Center / default line';
+        return;
+    }
+    label.textContent = numeric < 0
+        ? `${Math.abs(numeric).toFixed(0)}m left`
+        : `${numeric.toFixed(0)}m right`;
 }
 
 export function syncSpreadLegendItems(filters) {
@@ -363,16 +439,19 @@ export function syncSpreadLegendItems(filters) {
         const show = !!f[key];
         item.classList.toggle('legend-hidden', !show);
     }
+    requestRightPanelLayout();
 }
 
 export function setHolePanelVisible(visible) {
     if (!elements.holePanel) return;
     elements.holePanel.style.display = visible ? 'block' : 'none';
+    requestRightPanelLayout();
 }
 
 export function setHoleAnalyticsVisible(visible) {
     if (!elements.holeAnalyticsPanel) return;
     elements.holeAnalyticsPanel.style.display = visible ? 'block' : 'none';
+    requestRightPanelLayout();
 }
 
 export function setShotPanelVisible(visible) {
@@ -405,6 +484,35 @@ function applyAnalyticsToggleState(visible) {
     elements.btnAnalyticsToggle.textContent = showDetails ? 'Hide Details' : 'Show Details';
     elements.btnAnalyticsToggle.disabled = !hasDetails;
     elements.btnAnalyticsToggle.style.opacity = hasDetails ? '1' : '0.5';
+    requestRightPanelLayout();
+}
+
+function bindPanelCollapseToggles() {
+    for (const button of elements.panelToggleButtons ?? []) {
+        button.addEventListener('click', () => {
+            const key = String(button.dataset.panelToggle ?? '').trim();
+            if (!key) return;
+            togglePanelCollapsed(key);
+        });
+    }
+}
+
+function togglePanelCollapsed(key) {
+    const config = elements.collapsiblePanels?.[key];
+    if (!config?.panel) return;
+    const collapsed = !config.panel.classList.contains('panel-collapsed');
+    config.panel.classList.toggle('panel-collapsed', collapsed);
+    syncPanelToggleButtons(key, collapsed);
+    requestRightPanelLayout();
+}
+
+function syncPanelToggleButtons(key, collapsed) {
+    for (const button of elements.panelToggleButtons ?? []) {
+        if (button.dataset.panelToggle !== key) continue;
+        button.textContent = collapsed ? '+' : '-';
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        button.title = collapsed ? 'Expand panel' : 'Minimize panel';
+    }
 }
 
 function requestRightPanelLayout() {
@@ -414,8 +522,24 @@ function requestRightPanelLayout() {
     }
     elements._layoutRaf = requestAnimationFrame(() => {
         elements._layoutRaf = 0;
+        layoutLeftPanels();
         layoutRightPanels();
     });
+}
+
+function layoutLeftPanels() {
+    if (!isVisible(elements.holeAnalyticsPanel)) return;
+
+    const topAnchor = isVisible(elements.holePanel)
+        ? elements.holePanel.getBoundingClientRect().bottom + 12
+        : 70;
+    const bottomLimit = getBottomLimit();
+    const collapsed = elements.holeAnalyticsPanel.classList.contains('panel-collapsed');
+    const minHeight = collapsed ? 54 : 120;
+    const available = Math.max(48, bottomLimit - topAnchor);
+
+    elements.holeAnalyticsPanel.style.top = `${Math.round(topAnchor)}px`;
+    elements.holeAnalyticsPanel.style.maxHeight = `${Math.max(minHeight, Math.min(available, window.innerHeight - topAnchor - 12))}px`;
 }
 
 function layoutRightPanels() {
@@ -423,12 +547,33 @@ function layoutRightPanels() {
     const shotRect = shotVisible ? elements.shotPanel.getBoundingClientRect() : null;
     let nextTop = shotRect ? (shotRect.bottom + 12) : 70;
 
-    for (const panel of [elements.caddiePanel, elements.spreadLegend, elements.geometryDebug]) {
-        if (!isVisible(panel)) continue;
+    const visiblePanels = [elements.caddiePanel, elements.plannerPanel, elements.spreadLegend, elements.geometryDebug]
+        .filter(isVisible);
+    const bottomLimit = getBottomLimit();
+    const collapsedHeight = 54;
+
+    visiblePanels.forEach((panel, index) => {
+        const remainingPanels = visiblePanels.length - index - 1;
+        const reserve = remainingPanels * (collapsedHeight + 12);
+        const remainingSpace = Math.max(44, bottomLimit - nextTop);
+        const collapsed = panel.classList.contains('panel-collapsed');
+        const targetHeight = collapsed
+            ? Math.min(collapsedHeight, remainingSpace)
+            : Math.max(120, remainingSpace - reserve);
+
         panel.style.top = `${Math.round(nextTop)}px`;
+        panel.style.maxHeight = `${Math.max(44, Math.min(targetHeight, remainingSpace))}px`;
         const h = panel.getBoundingClientRect().height;
         nextTop += h + 12;
+    });
+}
+
+function getBottomLimit() {
+    const candidates = [window.innerHeight - 16];
+    if (isVisible(elements.scorecardBar)) {
+        candidates.push(elements.scorecardBar.getBoundingClientRect().top - 12);
     }
+    return Math.max(140, Math.min(...candidates));
 }
 
 function isVisible(el) {
