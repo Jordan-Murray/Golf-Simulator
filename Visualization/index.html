@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golf 3D - Shot Visualizer</title>
-    <link rel="stylesheet" href="css/style.css?v=20260316g" />
+    <link rel="stylesheet" href="css/style.css?v=20260316l" />
     <script type="importmap">
     {
         "imports": {
@@ -23,6 +23,7 @@
             <div id="main-menu-subtitle">Choose what you want to do</div>
             <button class="main-menu-btn" data-mode="replay">Play Round Replay</button>
             <button class="main-menu-btn" data-mode="spread">Shot Spread Analysis</button>
+            <button class="main-menu-btn" data-mode="analytics">Analytics Dashboard</button>
             <button id="btn-menu-settings" class="main-menu-btn" type="button">Settings</button>
             <div id="menu-settings">
                 <button id="btn-import-geometry" class="main-menu-btn" type="button" title="Import geometry source file">Import GeoJSON / KML</button>
@@ -156,6 +157,51 @@
             <pre id="geometry-debug-body">Waiting for hole...</pre>
         </div>
     </div>
+
+    <div id="analytics-dashboard">
+        <div id="analytics-dashboard-shell">
+            <div id="analytics-dashboard-header">
+                <div>
+                    <div id="analytics-dashboard-title">Hole Analytics Dashboard</div>
+                    <div id="analytics-dashboard-subtitle">Current hole overview</div>
+                </div>
+                <div id="analytics-dashboard-actions">
+                    <div id="analytics-dashboard-mode-toggle">
+                        <button class="analytics-dashboard-mode-btn is-active" type="button" data-dashboard-mode="hole">Hole View</button>
+                        <button class="analytics-dashboard-mode-btn" type="button" data-dashboard-mode="course">Course View</button>
+                    </div>
+                    <select id="analytics-dashboard-round-select" title="Choose round"></select>
+                    <button id="analytics-dashboard-prev-hole" class="analytics-dashboard-nav" type="button" title="Previous hole"><</button>
+                    <div id="analytics-dashboard-hole-label">Hole 1</div>
+                    <button id="analytics-dashboard-next-hole" class="analytics-dashboard-nav" type="button" title="Next hole">></button>
+                    <select id="analytics-dashboard-benchmark-mode" title="Choose strokes baseline">
+                        <option value="personal" selected>My Baseline</option>
+                        <option value="target">Target Benchmark</option>
+                    </select>
+                    <button id="analytics-dashboard-close" type="button" title="Close dashboard">Close</button>
+                </div>
+            </div>
+            <div id="analytics-dashboard-grid">
+                <aside id="analytics-dashboard-rail">
+                    <section class="analytics-dashboard-card">
+                        <div id="analytics-dashboard-summary-title" class="analytics-dashboard-card-title">Overview</div>
+                        <div id="analytics-dashboard-summary">Loading overview...</div>
+                    </section>
+                    <section class="analytics-dashboard-card">
+                        <div id="analytics-dashboard-secondary-title" class="analytics-dashboard-card-title">Pre-Shot Caddie</div>
+                        <div id="analytics-dashboard-caddie">Loading caddie...</div>
+                    </section>
+                </aside>
+                <main id="analytics-dashboard-main">
+                    <section class="analytics-dashboard-card analytics-dashboard-card-main">
+                        <div id="analytics-dashboard-main-title" class="analytics-dashboard-card-title">Detailed Hole Analytics</div>
+                        <div id="analytics-dashboard-details">Loading analytics...</div>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </div>
+
     <div id="controls">
         <button class="ctrl-btn" id="btn-prev-hole" title="Previous Hole"><<</button>
         <button class="ctrl-btn" id="btn-prev-shot" title="Previous Shot"><</button>
@@ -181,6 +227,6 @@
 
     <div id="kb-hint">Left/Right shots | Up/Down holes | Space play | G debug | B best | W worst | M menu | Esc close menu</div>
 
-    <script type="module" src="js/main.js?v=20260316j"></script>
+    <script type="module" src="js/main.js?v=20260316p"></script>
 </body>
 </html>

@@ -14,6 +14,21 @@ export function initUI() {
         holeAnalyticsBody: document.getElementById('hole-analytics-body'),
         btnAnalyticsToggle: document.getElementById('btn-analytics-toggle'),
         analyticsBenchmarkMode: document.getElementById('analytics-benchmark-mode'),
+        analyticsDashboard: document.getElementById('analytics-dashboard'),
+        analyticsDashboardTitle: document.getElementById('analytics-dashboard-title'),
+        analyticsDashboardSubtitle: document.getElementById('analytics-dashboard-subtitle'),
+        analyticsDashboardHoleLabel: document.getElementById('analytics-dashboard-hole-label'),
+        analyticsDashboardSummaryTitle: document.getElementById('analytics-dashboard-summary-title'),
+        analyticsDashboardSecondaryTitle: document.getElementById('analytics-dashboard-secondary-title'),
+        analyticsDashboardMainTitle: document.getElementById('analytics-dashboard-main-title'),
+        analyticsDashboardSummary: document.getElementById('analytics-dashboard-summary'),
+        analyticsDashboardDetails: document.getElementById('analytics-dashboard-details'),
+        analyticsDashboardCaddie: document.getElementById('analytics-dashboard-caddie'),
+        analyticsDashboardClose: document.getElementById('analytics-dashboard-close'),
+        analyticsDashboardPrevHole: document.getElementById('analytics-dashboard-prev-hole'),
+        analyticsDashboardNextHole: document.getElementById('analytics-dashboard-next-hole'),
+        analyticsDashboardBenchmarkMode: document.getElementById('analytics-dashboard-benchmark-mode'),
+        analyticsDashboardModeButtons: Array.from(document.querySelectorAll('.analytics-dashboard-mode-btn')),
         shotPanel: document.getElementById('shot-panel'),
         shotClub: document.getElementById('shot-club'),
         shotDist: document.getElementById('shot-dist'),
@@ -33,6 +48,7 @@ export function initUI() {
         scorecard: document.getElementById('scorecard'),
         scorecardBar: document.getElementById('scorecard-bar'),
         roundSelect: document.getElementById('round-select'),
+        analyticsDashboardRoundSelect: document.getElementById('analytics-dashboard-round-select'),
         spreadMode: document.getElementById('spread-mode'),
         spreadClub: document.getElementById('spread-club'),
         spreadRange: document.getElementById('spread-range'),
@@ -75,18 +91,33 @@ export function initUI() {
 }
 
 export function populateRoundSelector(rounds) {
-    elements.roundSelect.innerHTML = '';
-    rounds.forEach((round, idx) => {
-        const opt = document.createElement('option');
-        opt.value = idx;
-        opt.textContent = `${round.courseName} - ${round.date} (${round.totalScore})`;
-        elements.roundSelect.appendChild(opt);
-    });
+    const selects = [elements.roundSelect, elements.analyticsDashboardRoundSelect].filter(Boolean);
+    for (const select of selects) {
+        select.innerHTML = '';
+        rounds.forEach((round, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.textContent = `${round.courseName} - ${round.date} (${round.totalScore})`;
+            select.appendChild(opt);
+        });
+    }
 }
 
 export function setRoundSelection(idx) {
-    if (!elements.roundSelect) return;
-    elements.roundSelect.value = String(idx);
+    if (elements.roundSelect) elements.roundSelect.value = String(idx);
+    if (elements.analyticsDashboardRoundSelect) elements.analyticsDashboardRoundSelect.value = String(idx);
+}
+
+export function onRoundSelectionChange(cb) {
+    const bind = select => {
+        if (!select) return;
+        select.addEventListener('change', e => {
+            const idx = Number(e.target?.value);
+            cb(Number.isFinite(idx) ? idx : 0);
+        });
+    };
+    bind(elements.roundSelect);
+    bind(elements.analyticsDashboardRoundSelect);
 }
 
 export function updateHoleInfo(hole) {
@@ -332,14 +363,24 @@ export function onAnalyticsToggle(cb) {
 }
 
 export function getAnalyticsBenchmarkMode() {
-    return elements.analyticsBenchmarkMode?.value ?? 'personal';
+    return elements.analyticsBenchmarkMode?.value
+        ?? elements.analyticsDashboardBenchmarkMode?.value
+        ?? 'personal';
 }
 
 export function onAnalyticsBenchmarkModeChange(cb) {
-    if (!elements.analyticsBenchmarkMode) return;
-    elements.analyticsBenchmarkMode.addEventListener('change', () => {
-        cb(getAnalyticsBenchmarkMode());
-    });
+    const emit = event => {
+        const mode = event?.target?.value ?? getAnalyticsBenchmarkMode();
+        cb(mode);
+    };
+    elements.analyticsBenchmarkMode?.addEventListener('change', emit);
+    elements.analyticsDashboardBenchmarkMode?.addEventListener('change', emit);
+}
+
+export function setAnalyticsBenchmarkMode(mode) {
+    const value = String(mode ?? 'personal').toLowerCase() === 'target' ? 'target' : 'personal';
+    if (elements.analyticsBenchmarkMode) elements.analyticsBenchmarkMode.value = value;
+    if (elements.analyticsDashboardBenchmarkMode) elements.analyticsDashboardBenchmarkMode.value = value;
 }
 
 export function setAnalyticsDetailsVisible(visible) {
@@ -358,6 +399,75 @@ export function updateHoleAnalytics(summaryText, detailsText = '') {
     requestRightPanelLayout();
 }
 
+export function updateAnalyticsDashboard(model) {
+    if (!model) return;
+    if (elements.analyticsDashboardTitle) elements.analyticsDashboardTitle.textContent = model.title ?? 'Hole Analytics Dashboard';
+    if (elements.analyticsDashboardSubtitle) elements.analyticsDashboardSubtitle.textContent = model.subtitle ?? '';
+    if (elements.analyticsDashboardHoleLabel) elements.analyticsDashboardHoleLabel.textContent = model.holeLabel ?? '';
+    if (elements.analyticsDashboardSummaryTitle) elements.analyticsDashboardSummaryTitle.textContent = model.summaryTitle ?? 'Overview';
+    if (elements.analyticsDashboardSecondaryTitle) elements.analyticsDashboardSecondaryTitle.textContent = model.secondaryTitle ?? 'Pre-Shot Caddie';
+    if (elements.analyticsDashboardMainTitle) elements.analyticsDashboardMainTitle.textContent = model.mainTitle ?? 'Detailed Hole Analytics';
+    if (elements.analyticsDashboardSummary) elements.analyticsDashboardSummary.innerHTML = model.summaryHtml ?? '';
+    if (elements.analyticsDashboardDetails) elements.analyticsDashboardDetails.innerHTML = model.detailsHtml ?? '';
+    if (elements.analyticsDashboardCaddie) elements.analyticsDashboardCaddie.innerHTML = model.caddieHtml ?? '';
+}
+
+export function setAnalyticsDashboardVisible(visible) {
+    if (!elements.analyticsDashboard) return;
+    elements.analyticsDashboard.style.display = visible ? 'block' : 'none';
+}
+
+export function onAnalyticsDashboardClose(cb) {
+    elements.analyticsDashboardClose?.addEventListener('click', () => cb());
+}
+
+export function onAnalyticsDashboardHoleNav(cb) {
+    elements.analyticsDashboardPrevHole?.addEventListener('click', () => cb(-1));
+    elements.analyticsDashboardNextHole?.addEventListener('click', () => cb(1));
+}
+
+export function setAnalyticsDashboardMode(mode) {
+    const normalized = String(mode ?? 'hole').toLowerCase() === 'course' ? 'course' : 'hole';
+    for (const button of elements.analyticsDashboardModeButtons ?? []) {
+        const active = String(button.dataset.dashboardMode ?? '') === normalized;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+}
+
+export function onAnalyticsDashboardModeChange(cb) {
+    for (const button of elements.analyticsDashboardModeButtons ?? []) {
+        button.addEventListener('click', () => {
+            cb(button.dataset.dashboardMode ?? 'hole');
+        });
+    }
+}
+
+export function onAnalyticsDashboardTabSelect(cb) {
+    const bind = container => {
+        container?.addEventListener('click', e => {
+            const button = e.target?.closest?.('[data-dashboard-tab]');
+            if (!button) return;
+            cb(button.dataset.dashboardTab ?? 'overview');
+        });
+    };
+    bind(elements.analyticsDashboardDetails);
+}
+
+export function onAnalyticsDashboardHoleSelect(cb) {
+    const bind = container => {
+        container?.addEventListener('click', e => {
+            const target = e.target?.closest?.('[data-dashboard-hole-index]');
+            if (!target) return;
+            const idx = Number(target.dataset.dashboardHoleIndex);
+            if (!Number.isFinite(idx)) return;
+            cb(idx);
+        });
+    };
+    bind(elements.analyticsDashboardDetails);
+    bind(elements.analyticsDashboardCaddie);
+}
+
 export function updateCaddiePlan(text) {
     if (!elements.caddieBody) return;
     elements.caddieBody.innerHTML = text;
@@ -371,14 +481,19 @@ export function updatePlannerPanel(text) {
 }
 
 export function onCaddiePlanSelect(cb) {
-    if (!elements.caddieBody) return;
-    elements.caddieBody.addEventListener('click', e => {
-        const button = e.target?.closest?.('[data-tee-plan-club]');
-        if (!button) return;
-        const club = String(button.dataset.teePlanClub ?? '').trim();
-        if (!club) return;
-        cb(club);
-    });
+    const bind = container => {
+        if (!container) return;
+        container.addEventListener('click', e => {
+            const button = e.target?.closest?.('[data-tee-plan-club]');
+            if (!button) return;
+            const club = String(button.dataset.teePlanClub ?? '').trim();
+            if (!club) return;
+            cb(club);
+        });
+    };
+    bind(elements.caddieBody);
+    bind(elements.analyticsDashboardCaddie);
+    bind(elements.analyticsDashboardDetails);
 }
 
 export function setCaddieVisible(visible) {
