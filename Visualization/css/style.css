@@ -316,6 +316,190 @@ body {
     font-weight: 700;
     cursor: pointer;
 }
+.tee-trust-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+.tee-trust-card {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.tee-trust-card:hover {
+    background: rgba(255,255,255,0.07);
+}
+.tee-trust-card.is-selected {
+    border-color: rgba(128, 222, 234, 0.46);
+    box-shadow: inset 0 0 0 1px rgba(128, 222, 234, 0.14);
+}
+.tee-trust-card-high {
+    background: linear-gradient(180deg, rgba(70, 112, 48, 0.18), rgba(255,255,255,0.04));
+}
+.tee-trust-card-medium {
+    background: linear-gradient(180deg, rgba(70, 90, 34, 0.14), rgba(255,255,255,0.04));
+}
+.tee-trust-card-low {
+    background: linear-gradient(180deg, rgba(105, 55, 45, 0.18), rgba(255,255,255,0.04));
+}
+.tee-trust-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: start;
+}
+.tee-trust-role {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(225, 237, 246, 0.72);
+}
+.tee-trust-club {
+    margin-top: 3px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f4fbff;
+}
+.tee-trust-score-wrap {
+    text-align: right;
+}
+.tee-trust-score {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #f3fdff;
+}
+.tee-trust-band {
+    margin-top: 2px;
+    font-size: 0.69rem;
+    color: rgba(225, 237, 246, 0.72);
+}
+.tee-trust-bar {
+    margin-top: 10px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    overflow: hidden;
+}
+.tee-trust-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(255, 167, 38, 0.82), rgba(102, 187, 106, 0.95));
+}
+.tee-trust-metrics {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.tee-trust-metric {
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.20);
+    border: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.68rem;
+    color: #ebf6fc;
+}
+.tee-trust-note {
+    margin-top: 10px;
+    font-size: 0.74rem;
+    line-height: 1.45;
+    color: rgba(232, 242, 249, 0.84);
+}
+.putt-pressure-wrap {
+    overflow: auto;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.04);
+}
+.putt-pressure-table {
+    width: 100%;
+    min-width: 640px;
+    border-collapse: collapse;
+}
+.putt-pressure-table th,
+.putt-pressure-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    text-align: left;
+    font-size: 0.74rem;
+    color: #ecf5fb;
+    vertical-align: middle;
+}
+.putt-pressure-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(11, 20, 26, 0.96);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(228, 239, 248, 0.72);
+}
+.putt-pressure-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+.putt-pressure-row-good {
+    background: rgba(102, 187, 106, 0.08);
+}
+.putt-pressure-row-attention {
+    background: rgba(255, 193, 7, 0.08);
+}
+.putt-pressure-row-risk {
+    background: rgba(229, 57, 53, 0.10);
+}
+.putt-pressure-row-empty {
+    opacity: 0.62;
+}
+.approach-window-wrap {
+    overflow: auto;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.04);
+}
+.approach-window-table {
+    width: 100%;
+    min-width: 700px;
+    border-collapse: collapse;
+}
+.approach-window-table th,
+.approach-window-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    text-align: left;
+    font-size: 0.74rem;
+    color: #ecf5fb;
+    vertical-align: middle;
+}
+.approach-window-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(11, 20, 26, 0.96);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(228, 239, 248, 0.72);
+}
+.approach-window-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+.approach-window-row-good {
+    background: rgba(102, 187, 106, 0.08);
+}
+.approach-window-row-attention {
+    background: rgba(255, 193, 7, 0.08);
+}
+.approach-window-row-risk {
+    background: rgba(229, 57, 53, 0.10);
+}
+.approach-window-row-empty {
+    opacity: 0.62;
+}
 .hole-ranking-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

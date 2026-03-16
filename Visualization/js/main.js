@@ -1678,6 +1678,7 @@ function renderHoleAnalyticsDashboardDetails(currentHole, summary) {
                 ['FIR by club', summary.teeFirByClub],
                 ['Score by club', summary.scoreByTeeClub]
             ]),
+            renderTeeTrustSection(summary),
             renderTeePlanCompareTable(summary),
             renderAnalyticsSection('Pattern And Plan', [
                 ['Miss bias', summary.lateral.text],
@@ -1698,6 +1699,7 @@ function renderHoleAnalyticsDashboardDetails(currentHole, summary) {
                 ['Short game avg', formatBaselineDelta(summary.strokesDashboard.average?.short)],
                 ['Putting avg', formatBaselineDelta(summary.strokesDashboard.average?.putting)]
             ]) : '',
+            renderApproachWindowsSection(summary),
             renderAnalyticsSection('Approach Focus', [
                 ['Likely miss pattern', summary.lateral.text],
                 ['Practice focus', summary.practiceFocus]
@@ -1715,6 +1717,7 @@ function renderHoleAnalyticsDashboardDetails(currentHole, summary) {
                 { label: 'Hole average', html: renderAnalyticsDelta(summary.strokesDashboard.average?.putting), valueClasses: 'analytics-row-value-emphasis' },
                 ['Best phase', summary.strokesDashboard.averageBest ? `${labelDashboardPhase(summary.strokesDashboard.averageBest.key)} ${formatBaselineDelta(summary.strokesDashboard.averageBest.value)}` : 'n/a']
             ]) : '',
+            renderPuttingPressureSection(summary),
             renderAnalyticsSection('Lag And Conversion', [
                 ['First putt distance', summary.avgFirstPutt],
                 ['3-putt pressure', `${summary.threePuttRate.toFixed(1)}%`]
@@ -1828,6 +1831,128 @@ function renderTeePlanCompareRow(option) {
         `<td>${escapeHtml(girText)}</td>`,
         `<td>${escapeHtml(puttText)}</td>`,
         `<td>${escapeHtml(sampleText)}</td>`,
+        '</tr>'
+    ].join('');
+}
+
+function renderTeeTrustSection(summary) {
+    const trustRows = Array.isArray(summary?.teeTrustScores) ? summary.teeTrustScores : [];
+    if (trustRows.length === 0) {
+        return '<section class="analytics-section"><div class="analytics-section-title">Club Trust Score</div><div class="analytics-muted">Need a few tee-club samples on this hole before trust scores settle.</div></section>';
+    }
+
+    return [
+        '<section class="analytics-section">',
+        '<div class="analytics-section-title">Club Trust Score</div>',
+        '<div class="analytics-section-intro">Blends scoring trend, fairway control, penalty load, dispersion, and sample size. Click a card to preview that club.</div>',
+        '<div class="tee-trust-grid">',
+        trustRows.map(row => renderTeeTrustCard(row)).join(''),
+        '</div>',
+        '</section>'
+    ].join('');
+}
+
+function renderTeeTrustCard(row) {
+    const selected = normalize(selectedTeePlanClub) === normalize(row?.club);
+    const tone = row?.trustScore >= 76 ? 'high' : row?.trustScore >= 60 ? 'medium' : 'low';
+    const metricBits = [
+        Number.isFinite(row?.expectedScore) ? `Exp ${row.expectedScore.toFixed(2)}` : null,
+        Number.isFinite(row?.firPct) ? `FIR ${row.firPct.toFixed(0)}%` : null,
+        Number.isFinite(row?.penaltyPct) ? `Pen ${row.penaltyPct.toFixed(0)}%` : null,
+        Number.isFinite(row?.dispersionMeters) ? `Lat spread ${row.dispersionMeters.toFixed(1)}m` : null,
+        `n=${row?.n ?? 0}`
+    ].filter(Boolean);
+
+    return [
+        `<button type="button" class="tee-trust-card tee-trust-card-${tone}${selected ? ' is-selected' : ''}" data-tee-plan-club="${escapeHtml(row?.club ?? '')}">`,
+        '<div class="tee-trust-card-head">',
+        '<div>',
+        `<div class="tee-trust-role">${escapeHtml(row?.roleLabel ?? 'Tee option')}</div>`,
+        `<div class="tee-trust-club">${escapeHtml(row?.club ?? 'Unknown club')}</div>`,
+        '</div>',
+        '<div class="tee-trust-score-wrap">',
+        `<div class="tee-trust-score">${escapeHtml(String(row?.trustScore ?? 0))}</div>`,
+        `<div class="tee-trust-band">${escapeHtml(row?.trustLabel ?? 'Building')}</div>`,
+        '</div>',
+        '</div>',
+        `<div class="tee-trust-bar"><span style="width:${clamp(Number(row?.trustScore) || 0, 0, 100)}%"></span></div>`,
+        `<div class="tee-trust-metrics">${metricBits.map(bit => `<span class="tee-trust-metric">${escapeHtml(bit)}</span>`).join('')}</div>`,
+        `<div class="tee-trust-note">${escapeHtml(row?.note ?? 'Signal still building.')}</div>`,
+        '</button>'
+    ].join('');
+}
+
+function renderPuttingPressureSection(summary) {
+    const matrix = summary?.puttingPressure;
+    const rows = Array.isArray(matrix?.rows) ? matrix.rows : [];
+    if (rows.length === 0) {
+        return '<section class="analytics-section"><div class="analytics-section-title">Putting Pressure Matrix</div><div class="analytics-muted">No first-putt samples available on this hole yet.</div></section>';
+    }
+
+    return [
+        '<section class="analytics-section">',
+        '<div class="analytics-section-title">Putting Pressure Matrix</div>',
+        `<div class="analytics-section-intro">${escapeHtml(matrix?.focus ?? 'First-putt outcomes by distance band on this hole.')}</div>`,
+        '<div class="putt-pressure-wrap">',
+        '<table class="putt-pressure-table">',
+        '<thead><tr><th>First putt</th><th>Avg putts</th><th>1-putt</th><th>3-putt</th><th>Sample</th><th>Read</th></tr></thead>',
+        '<tbody>',
+        rows.map(row => renderPuttingPressureRow(row)).join(''),
+        '</tbody>',
+        '</table>',
+        '</div>',
+        '</section>'
+    ].join('');
+}
+
+function renderPuttingPressureRow(row) {
+    const tone = row?.tone ?? 'neutral';
+    return [
+        `<tr class="putt-pressure-row putt-pressure-row-${escapeHtml(tone)}">`,
+        `<td>${escapeHtml(row?.label ?? 'n/a')}</td>`,
+        `<td>${Number.isFinite(row?.avgPutts) ? escapeHtml(row.avgPutts.toFixed(2)) : 'n/a'}</td>`,
+        `<td>${Number.isFinite(row?.onePuttRate) ? escapeHtml(`${(row.onePuttRate * 100).toFixed(0)}%`) : 'n/a'}</td>`,
+        `<td>${Number.isFinite(row?.threePuttRate) ? escapeHtml(`${(row.threePuttRate * 100).toFixed(0)}%`) : 'n/a'}</td>`,
+        `<td>${escapeHtml(`n=${row?.count ?? 0}`)}</td>`,
+        `<td>${escapeHtml(row?.read ?? 'Building')}</td>`,
+        '</tr>'
+    ].join('');
+}
+
+function renderApproachWindowsSection(summary) {
+    const model = summary?.approachWindows;
+    const rows = Array.isArray(model?.rows) ? model.rows : [];
+    if (rows.length === 0) {
+        return '<section class="analytics-section"><div class="analytics-section-title">Approach Windows</div><div class="analytics-muted">Not enough non-tee approach samples on this hole yet.</div></section>';
+    }
+
+    return [
+        '<section class="analytics-section">',
+        '<div class="analytics-section-title">Approach Windows</div>',
+        `<div class="analytics-section-intro">${escapeHtml(model?.focus ?? 'Your scoring by starting distance window on this hole.')}</div>`,
+        '<div class="approach-window-wrap">',
+        '<table class="approach-window-table">',
+        '<thead><tr><th>Start</th><th>Lie</th><th>Finish</th><th>GIR</th><th>Proximity</th><th>Club</th><th>Read</th></tr></thead>',
+        '<tbody>',
+        rows.map(row => renderApproachWindowRow(row)).join(''),
+        '</tbody>',
+        '</table>',
+        '</div>',
+        '</section>'
+    ].join('');
+}
+
+function renderApproachWindowRow(row) {
+    const tone = row?.tone ?? 'neutral';
+    return [
+        `<tr class="approach-window-row approach-window-row-${escapeHtml(tone)}">`,
+        `<td>${escapeHtml(row?.label ?? 'n/a')}</td>`,
+        `<td>${escapeHtml(row?.lieLabel ?? 'mixed')}</td>`,
+        `<td>${Number.isFinite(row?.avgFinish) ? escapeHtml(`${row.avgFinish.toFixed(2)} shots`) : 'n/a'}</td>`,
+        `<td>${Number.isFinite(row?.girRate) ? escapeHtml(`${(row.girRate * 100).toFixed(0)}%`) : 'n/a'}</td>`,
+        `<td>${Number.isFinite(row?.avgEndDistance) ? escapeHtml(`${row.avgEndDistance.toFixed(1)} yds`) : 'n/a'}</td>`,
+        `<td>${escapeHtml(row?.clubLabel ?? 'mixed')}</td>`,
+        `<td>${escapeHtml(row?.read ?? 'Building')}</td>`,
         '</tr>'
     ].join('');
 }
@@ -3335,6 +3460,9 @@ function buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry = null,
     const teeRecommendation = buildBestTeeRecommendation(samples, fairwayPolygons, alignedGeometry);
     const aimNote = buildAimNote(lateral);
     const currentToParLabel = formatToPar(Number(currentHole.score) - Number(currentHole.par));
+    const approachWindows = buildApproachWindowsSummary(samples, alignedGeometry);
+    const teeTrustScores = buildTeeTrustScores(currentHole, samples, teeOptions, primaryTeeOption, conservativeTeeOption);
+    const puttingPressure = buildPuttingPressureMatrix(samples);
     const confidence = {
         score: formatConfidenceBadge(rounds, { high: 18, medium: 8 }),
         teePlan: formatConfidenceBadge(primaryTeeOption?.n ?? 0, { high: 8, medium: 4 }),
@@ -3354,7 +3482,7 @@ function buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry = null,
         avgScore,
         avgPutts: avg(puttsPerHole),
         avgPenalties: avg(penaltiesPerHole),
-        avgFirstPutt: firstPuttDists.length ? `${avg(firstPuttDists).toFixed(1)} yds` : '-',
+        avgFirstPutt: firstPuttDists.length ? `${avg(firstPuttDists).toFixed(1)} ft` : '-',
         girPct,
         threePuttRate,
         fir,
@@ -3376,13 +3504,406 @@ function buildHoleAnalyticsSummary(currentHole, samples, alignedGeometry = null,
         teeOptions,
         primaryTeeOption,
         conservativeTeeOption,
+        teeTrustScores,
         teeRecommendation,
         aimNote,
+        approachWindows,
+        puttingPressure,
         currentToParLabel,
         confidence,
         practiceFocus,
         baselineInfo: getCurrentBaselineInfo()
     };
+}
+
+function buildTeeTrustScores(referenceHole, samples, teeOptions, primaryTeeOption = null, conservativeTeeOption = null) {
+    const options = (teeOptions ?? []).filter(option => !option?.plannerOnly);
+    if (options.length === 0) return [];
+
+    const expectedScores = options
+        .map(option => getTeeOptionExpectedScore(option))
+        .filter(Number.isFinite);
+    const bestExpected = expectedScores.length > 0 ? Math.min(...expectedScores) : NaN;
+    const worstExpected = expectedScores.length > 0 ? Math.max(...expectedScores) : NaN;
+
+    return options
+        .map(option => {
+            const shape = resolvePlannerTeeShapeStats(referenceHole, samples, option);
+            const dispersionMeters = Number.isFinite(shape?.stdLateral) ? Number(shape.stdLateral) : null;
+            const scoreFactor = computeRelativeExpectedScoreFactor(getTeeOptionExpectedScore(option), bestExpected, worstExpected);
+            const firFactor = Number.isFinite(option?.firRateAdj) ? clamp(option.firRateAdj, 0, 1) : null;
+            const penaltyFactor = Number.isFinite(option?.penaltyHoleRateAdj) ? clamp(1 - option.penaltyHoleRateAdj, 0, 1) : null;
+            const dispersionFactor = Number.isFinite(dispersionMeters)
+                ? clamp(1 - ((dispersionMeters - 4) / 18), 0, 1)
+                : null;
+            const sampleFactor = clamp((Number(option?.n) || 0) / 8, 0, 1);
+            const trustScore = Math.round(computeWeightedComponentScore([
+                { weight: 0.30, value: scoreFactor },
+                { weight: 0.22, value: firFactor },
+                { weight: 0.24, value: penaltyFactor },
+                { weight: 0.16, value: dispersionFactor },
+                { weight: 0.08, value: sampleFactor }
+            ]) * 100);
+            const roleLabel = normalize(primaryTeeOption?.club) === normalize(option?.club)
+                ? 'Primary plan'
+                : normalize(conservativeTeeOption?.club) === normalize(option?.club)
+                    ? 'Safety fallback'
+                    : 'Alternate line';
+
+            return {
+                club: option?.club ?? 'Unknown club',
+                n: Number(option?.n) || 0,
+                trustScore,
+                trustLabel: describeTrustLabel(trustScore),
+                roleLabel,
+                expectedScore: getTeeOptionExpectedScore(option),
+                firPct: Number.isFinite(option?.firRateAdj) ? option.firRateAdj * 100 : null,
+                penaltyPct: Number.isFinite(option?.penaltyHoleRateAdj) ? option.penaltyHoleRateAdj * 100 : null,
+                dispersionMeters,
+                note: describeTeeTrustNote({ scoreFactor, firFactor, penaltyFactor, dispersionFactor, sampleFactor })
+            };
+        })
+        .sort((a, b) => {
+            if (b.trustScore !== a.trustScore) return b.trustScore - a.trustScore;
+            const expectedA = Number.isFinite(a.expectedScore) ? a.expectedScore : Number.POSITIVE_INFINITY;
+            const expectedB = Number.isFinite(b.expectedScore) ? b.expectedScore : Number.POSITIVE_INFINITY;
+            if (expectedA !== expectedB) return expectedA - expectedB;
+            return b.n - a.n;
+        });
+}
+
+function getTeeOptionExpectedScore(option) {
+    if (Number.isFinite(option?.strategyExpectedScore)) return option.strategyExpectedScore;
+    if (Number.isFinite(option?.adjustedExpectedScore)) return option.adjustedExpectedScore;
+    return NaN;
+}
+
+function computeRelativeExpectedScoreFactor(value, best, worst) {
+    if (!Number.isFinite(value)) return 0.5;
+    if (!Number.isFinite(best) || !Number.isFinite(worst) || Math.abs(worst - best) < 0.08) {
+        return 0.65;
+    }
+    return clamp(1 - ((value - best) / (worst - best)), 0, 1);
+}
+
+function computeWeightedComponentScore(components) {
+    const usable = (components ?? []).filter(component => Number.isFinite(component?.value) && Number.isFinite(component?.weight) && component.weight > 0);
+    if (usable.length === 0) return 0.5;
+    const totalWeight = usable.reduce((sum, component) => sum + component.weight, 0);
+    if (totalWeight <= 0) return 0.5;
+    return usable.reduce((sum, component) => sum + component.value * component.weight, 0) / totalWeight;
+}
+
+function describeTrustLabel(trustScore) {
+    if (!Number.isFinite(trustScore)) return 'Building';
+    if (trustScore >= 78) return 'High trust';
+    if (trustScore >= 64) return 'Playable';
+    if (trustScore >= 50) return 'Situational';
+    return 'Volatile';
+}
+
+function describeTeeTrustNote({ scoreFactor, firFactor, penaltyFactor, dispersionFactor, sampleFactor }) {
+    const strengths = [];
+    const concerns = [];
+
+    if (scoreFactor >= 0.72) strengths.push('best scoring trend');
+    if (firFactor !== null && firFactor >= 0.65) strengths.push('fairway control');
+    if (penaltyFactor !== null && penaltyFactor >= 0.72) strengths.push('lower penalty load');
+    if (dispersionFactor !== null && dispersionFactor >= 0.68) strengths.push('tight start-line pattern');
+    if (sampleFactor >= 0.75) strengths.push('stable sample');
+
+    if (firFactor !== null && firFactor < 0.45) concerns.push('fairway misses');
+    if (penaltyFactor !== null && penaltyFactor < 0.58) concerns.push('penalty exposure');
+    if (dispersionFactor !== null && dispersionFactor < 0.45) concerns.push('wide miss pattern');
+    if (sampleFactor < 0.35) concerns.push('small sample');
+    if (scoreFactor < 0.38) concerns.push('weaker scoring history');
+
+    const positive = strengths[0] ? `Best signal: ${strengths[0]}.` : 'Signal still building.';
+    const caution = concerns[0] ? ` Watch ${concerns[0]}.` : '';
+    return `${positive}${caution}`;
+}
+
+function buildPuttingPressureMatrix(samples) {
+    const buckets = [
+        { key: 'short', label: '0-6 ft', min: 0, max: 6 },
+        { key: 'makeable', label: '6-15 ft', min: 6, max: 15 },
+        { key: 'lag', label: '15-30 ft', min: 15, max: 30 },
+        { key: 'long', label: '30-60 ft', min: 30, max: 60 },
+        { key: 'extra', label: '60+ ft', min: 60, max: Number.POSITIVE_INFINITY }
+    ];
+    const rowsByKey = new Map(buckets.map(bucket => [bucket.key, {
+        ...bucket,
+        count: 0,
+        sumPutts: 0,
+        onePutt: 0,
+        threePutt: 0
+    }]));
+
+    for (const hole of samples ?? []) {
+        const putts = [...(hole?.shots ?? [])]
+            .filter(shot => Number(shot?.clubId) === 13)
+            .sort((a, b) => Number(a?.shotNumber) - Number(b?.shotNumber));
+        if (putts.length === 0) continue;
+        const firstDistance = Number(putts[0]?.distance);
+        if (!Number.isFinite(firstDistance)) continue;
+        const bucket = buckets.find(entry => firstDistance >= entry.min && firstDistance < entry.max) ?? buckets[buckets.length - 1];
+        const row = rowsByKey.get(bucket.key);
+        if (!row) continue;
+        row.count++;
+        row.sumPutts += putts.length;
+        if (putts.length === 1) row.onePutt++;
+        if (putts.length >= 3) row.threePutt++;
+    }
+
+    const rows = buckets.map(bucket => {
+        const row = rowsByKey.get(bucket.key);
+        const avgPutts = row.count > 0 ? row.sumPutts / row.count : null;
+        const onePuttRate = row.count > 0 ? row.onePutt / row.count : null;
+        const threePuttRate = row.count > 0 ? row.threePutt / row.count : null;
+        const tone = describePuttingPressureTone(bucket, avgPutts, onePuttRate, threePuttRate, row.count);
+        const read = describePuttingPressureRead(bucket, avgPutts, onePuttRate, threePuttRate, row.count);
+        return {
+            key: bucket.key,
+            label: bucket.label,
+            count: row.count,
+            avgPutts,
+            onePuttRate,
+            threePuttRate,
+            tone,
+            read
+        };
+    });
+
+    return {
+        rows,
+        focus: buildPuttingPressureFocus(rows)
+    };
+}
+
+function buildApproachWindowsSummary(samples, alignedGeometry) {
+    const buckets = [
+        { key: 'wedge', label: '0-50 yds', min: 0, max: 50 },
+        { key: 'short', label: '50-90 yds', min: 50, max: 90 },
+        { key: 'mid', label: '90-130 yds', min: 90, max: 130 },
+        { key: 'long', label: '130-170 yds', min: 130, max: 170 },
+        { key: 'extra', label: '170+ yds', min: 170, max: Number.POSITIVE_INFINITY }
+    ];
+    const rowsByKey = new Map(buckets.map(bucket => [bucket.key, {
+        ...bucket,
+        count: 0,
+        sumFinish: 0,
+        greenHits: 0,
+        sumEndDistance: 0,
+        endDistanceCount: 0,
+        lieCounts: new Map(),
+        clubCounts: new Map()
+    }]));
+
+    for (const hole of samples ?? []) {
+        const ordered = [...(hole?.shots ?? [])]
+            .filter(shot => Number.isFinite(Number(shot?.shotNumber)))
+            .sort((a, b) => Number(a.shotNumber) - Number(b.shotNumber));
+        const holeScore = Number(hole?.score);
+        if (!Number.isFinite(holeScore)) continue;
+
+        for (let idx = 0; idx < ordered.length; idx++) {
+            const shot = ordered[idx];
+            const clubId = Number(shot?.clubId);
+            const shotNumber = Number(shot?.shotNumber);
+            if (!Number.isFinite(clubId) || !Number.isFinite(shotNumber)) continue;
+            if (shotNumber <= 1 || clubId === 13 || isPenaltyShot(shot)) continue;
+
+            const startDistance = distanceToPinFromPoint(shot?.start, hole?.pin);
+            if (!Number.isFinite(startDistance)) continue;
+
+            const bucket = buckets.find(entry => startDistance >= entry.min && startDistance < entry.max) ?? buckets[buckets.length - 1];
+            const row = rowsByKey.get(bucket.key);
+            if (!row) continue;
+
+            const lie = alignedGeometry
+                ? inferApproachLie([Number(shot?.start?.x), Number(shot?.start?.z)], alignedGeometry)
+                : null;
+            const endLie = alignedGeometry
+                ? inferApproachLie([Number(shot?.end?.x), Number(shot?.end?.z)], alignedGeometry)
+                : null;
+            const nextShot = ordered[idx + 1] ?? null;
+            const endedOnGreen = endLie === 'green' || Number(nextShot?.clubId) === 13;
+            const avgFinish = holeScore - shotNumber + 1;
+            const endDistance = distanceToPinFromPoint(shot?.end, hole?.pin);
+            const club = resolveClubName(shot);
+
+            row.count++;
+            row.sumFinish += avgFinish;
+            if (endedOnGreen) row.greenHits++;
+            if (Number.isFinite(endDistance)) {
+                row.sumEndDistance += endDistance;
+                row.endDistanceCount++;
+            }
+            if (lie) {
+                row.lieCounts.set(lie, (row.lieCounts.get(lie) ?? 0) + 1);
+            }
+            if (club) {
+                row.clubCounts.set(club, (row.clubCounts.get(club) ?? 0) + 1);
+            }
+        }
+    }
+
+    const rows = buckets
+        .map(bucket => {
+            const row = rowsByKey.get(bucket.key);
+            if (!row || row.count === 0) return null;
+            const avgFinish = row.sumFinish / row.count;
+            const girRate = row.greenHits / row.count;
+            const avgEndDistance = row.endDistanceCount > 0 ? row.sumEndDistance / row.endDistanceCount : null;
+            const topLie = topMapEntry(row.lieCounts);
+            const topClub = topMapEntry(row.clubCounts);
+            const tone = describeApproachWindowTone(bucket, avgFinish, girRate, avgEndDistance, row.count);
+            const read = describeApproachWindowRead(bucket, avgFinish, girRate, avgEndDistance, row.count);
+
+            return {
+                key: bucket.key,
+                label: bucket.label,
+                count: row.count,
+                avgFinish,
+                girRate,
+                avgEndDistance,
+                lieLabel: topLie ? `${topLie[0]} (${topLie[1]}/${row.count})` : 'mixed',
+                clubLabel: topClub ? `${topClub[0]} (${topClub[1]})` : 'mixed',
+                tone,
+                read
+            };
+        })
+        .filter(Boolean);
+
+    return {
+        rows,
+        focus: buildApproachWindowsFocus(rows)
+    };
+}
+
+function topMapEntry(map) {
+    if (!(map instanceof Map) || map.size === 0) return null;
+    return [...map.entries()].sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return String(a[0]).localeCompare(String(b[0]));
+    })[0] ?? null;
+}
+
+function describeApproachWindowTone(bucket, avgFinish, girRate, avgEndDistance, count) {
+    if (!count) return 'empty';
+    if (Number.isFinite(girRate) && girRate >= 0.45 && Number.isFinite(avgFinish) && avgFinish <= 2.6) return 'good';
+    if (Number.isFinite(avgFinish) && avgFinish >= 3.2) return 'risk';
+    if (Number.isFinite(girRate) && girRate <= 0.15 && count >= 3) return 'attention';
+    if (Number.isFinite(avgEndDistance) && avgEndDistance <= 8) return 'good';
+    return 'neutral';
+}
+
+function describeApproachWindowRead(bucket, avgFinish, girRate, avgEndDistance, count) {
+    if (!count) return 'No samples';
+    if (bucket.max <= 50 && Number.isFinite(avgFinish) && avgFinish >= 2.9) return 'Wedge scoring leak';
+    if (Number.isFinite(girRate) && girRate >= 0.45) return 'Attack window';
+    if (Number.isFinite(avgEndDistance) && avgEndDistance <= 8) return 'Strong proximity';
+    if (Number.isFinite(avgFinish) && avgFinish >= 3.2) return 'Costly leave';
+    if (Number.isFinite(girRate) && girRate <= 0.15) return 'Low green pressure';
+    return 'Neutral';
+}
+
+function buildApproachWindowsFocus(rows) {
+    const populated = (rows ?? []).filter(row => row.count > 0);
+    if (populated.length === 0) {
+        return 'Not enough approach samples on this hole yet to separate good windows from costly ones.';
+    }
+
+    const bestWindow = populated
+        .filter(row => row.count >= 2)
+        .slice()
+        .sort((a, b) => {
+            const scoreA = (a.avgFinish ?? 99) - (a.girRate ?? 0) * 0.45;
+            const scoreB = (b.avgFinish ?? 99) - (b.girRate ?? 0) * 0.45;
+            if (scoreA !== scoreB) return scoreA - scoreB;
+            return b.count - a.count;
+        })[0] ?? null;
+    const dangerWindow = populated
+        .filter(row => row.count >= 2)
+        .slice()
+        .sort((a, b) => {
+            const scoreA = (a.avgFinish ?? 0) + (1 - (a.girRate ?? 0)) * 0.35;
+            const scoreB = (b.avgFinish ?? 0) + (1 - (b.girRate ?? 0)) * 0.35;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return b.count - a.count;
+        })[0] ?? null;
+
+    if (bestWindow && dangerWindow && bestWindow.key !== dangerWindow.key) {
+        return `${bestWindow.label} is your best scoring approach window on this hole, while ${dangerWindow.label} is leaking the most.`;
+    }
+    if (bestWindow) {
+        return `${bestWindow.label} is currently the cleanest scoring window on this hole.`;
+    }
+    return 'Approach scoring is still flattening out across windows. Keep logging rounds for a clearer signal.';
+}
+
+function describePuttingPressureTone(bucket, avgPutts, onePuttRate, threePuttRate, count) {
+    if (!count) return 'empty';
+    if (bucket.max <= 15 && Number.isFinite(onePuttRate) && onePuttRate >= 0.6) return 'good';
+    if (Number.isFinite(threePuttRate) && threePuttRate >= 0.25) return 'risk';
+    if (Number.isFinite(avgPutts) && avgPutts >= 2.45) return 'risk';
+    if (bucket.max <= 15 && Number.isFinite(onePuttRate) && onePuttRate < 0.35) return 'attention';
+    return 'neutral';
+}
+
+function describePuttingPressureRead(bucket, avgPutts, onePuttRate, threePuttRate, count) {
+    if (!count) return 'No reads yet';
+    if (bucket.max <= 6 && Number.isFinite(onePuttRate)) {
+        return onePuttRate >= 0.75 ? 'Conversion zone' : 'Short-putt leak';
+    }
+    if (bucket.max <= 15 && Number.isFinite(onePuttRate)) {
+        return onePuttRate >= 0.4 ? 'Scoring chance' : 'Opportunity cost';
+    }
+    if (Number.isFinite(threePuttRate) && threePuttRate >= 0.25) {
+        return '3-putt pressure';
+    }
+    if (Number.isFinite(avgPutts) && avgPutts <= 2.1) {
+        return 'Stable lag band';
+    }
+    return 'Speed-control band';
+}
+
+function buildPuttingPressureFocus(rows) {
+    const populated = (rows ?? []).filter(row => row.count > 0);
+    if (populated.length === 0) {
+        return 'Track more first-putt starts on this hole to see where the pressure really lives.';
+    }
+
+    const biggestRisk = populated
+        .filter(row => row.count >= 2 && Number.isFinite(row.threePuttRate))
+        .slice()
+        .sort((a, b) => {
+            const riskA = (a.threePuttRate * 0.65) + ((a.avgPutts ?? 2) - 2) * 0.35;
+            const riskB = (b.threePuttRate * 0.65) + ((b.avgPutts ?? 2) - 2) * 0.35;
+            if (riskB !== riskA) return riskB - riskA;
+            return b.count - a.count;
+        })[0] ?? null;
+    if (biggestRisk && biggestRisk.threePuttRate >= 0.18) {
+        return `${biggestRisk.label} is the main stress band: ${biggestRisk.avgPutts?.toFixed(2) ?? 'n/a'} putts on average and ${(biggestRisk.threePuttRate * 100).toFixed(0)}% three-putts. Treat that range as pure speed control.`;
+    }
+
+    const missedChance = populated
+        .filter(row => row.count >= 2 && row.label !== '60+ ft' && Number.isFinite(row.onePuttRate))
+        .slice()
+        .sort((a, b) => a.onePuttRate - b.onePuttRate)[0] ?? null;
+    if (missedChance && missedChance.onePuttRate < 0.35) {
+        return `${missedChance.label} is where scores can fall fast: only ${(missedChance.onePuttRate * 100).toFixed(0)}% are cleaned up in one. That band is worth practice reps.`;
+    }
+
+    const safestBand = populated
+        .filter(row => Number.isFinite(row.onePuttRate))
+        .slice()
+        .sort((a, b) => b.onePuttRate - a.onePuttRate)[0] ?? null;
+    if (safestBand) {
+        return `${safestBand.label} is currently your best scoring band on this hole with ${(safestBand.onePuttRate * 100).toFixed(0)}% one-putts.`;
+    }
+
+    return 'Putting pattern is fairly neutral here. Keep chasing makeable first-putt looks and protect against long-range 3-putts.';
 }
 
 function buildDateSpan(samples) {
